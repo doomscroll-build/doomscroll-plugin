@@ -1,0 +1,12 @@
+{
+  "name": "doomscroll",
+  "description": "Doomscroll: narrated pull request explainer videos from your coding agent",
+  "owner": { "name": "Doomscroll", "url": "https://doomscroll.build" },
+  "plugins": [
+    {
+      "name": "doomscroll",
+      "source": "./",
+      "description": "Make a short narrated video that explains a pull request or your local changes."
+    }
+  ]
+}
