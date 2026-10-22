@@ -16,6 +16,11 @@ You are the one who knows the code. Doomscroll is the one that makes videos. Thi
 Nothing is rendered on this machine. The script is a thin client (`scripts/doomscroll.mjs`, Node 18+, no dependencies).
 Never build the video yourself (no Remotion, ffmpeg slideshows or TTS scripts): Doomscroll makes it.
 
+**If the doomscroll MCP tools are available** (`create_video`, `get_video`, `account`), use them instead of the script:
+the client already signed in, `create_video` takes the same `pr` or `change` plus `language` and `notes`, and
+`get_video` returns the MP4 link (valid 15 minutes), the GIF and the watch link to give the user. Everything else
+below (ask once, investigate, write the notes, put it in the PR) is the same.
+
 **A feature or "how X works" instead of a PR?** Doomscroll explains changes, so find the change that built it: the PR
 (`gh pr list --search <topic> --state merged`) or the commits (`git log --oneline -- <path>`), and send that PR, or
 `local --diff-file` with `git diff <first>^..<last> -- <paths>`. Put the whole system in the notes.

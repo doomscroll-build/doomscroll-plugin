@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "doomscroll": {
+      "type": "http",
+      "url": "https://doomscroll.build/mcp"
+    }
+  }
+}
