@@ -13,7 +13,7 @@ Works with Claude Code, Codex, Cursor, Gemini CLI and [more](https://skills.sh).
 
 > Make a Doomscroll video of my changes
 
-The first time, the agent shows you a sign-in link. Approve it with GitHub, and you start with 30 free videos.
+The first time, the agent shows you a sign-in link. Approve it with GitHub. You get 5 free videos a day.
 
 Claude Code plugin instead: `/plugin marketplace add doomscroll-build/doomscroll-plugin`, then
 `/plugin install doomscroll@doomscroll`.
