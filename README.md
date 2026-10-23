@@ -62,7 +62,7 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 `doomscroll.mjs watermark <video>` adds the same watermark, outro and jingle to any video with your local ffmpeg (logo in
 `skills/doomscroll-video/assets/`).
 
-`theme`: `classic` (default), `football` or `kpop`. `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
+`theme`: `classic` (default), `3d`, `football` or `kpop`. `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
 your DoomScroll setting). `notes`: `summary`, `why`, `howItWorks`, `architecture`, `risks`, `audience` (text), `flows`
 (≤ 10 strings) and `components` (≤ 20 of `{name, kind, role?, change?, tech?}`); the skill explains each field.
 

@@ -22,7 +22,7 @@ const HELP = `Usage:
   doomscroll.mjs watermark <video> [--out <file.mp4>] [--jingle <audio> --jingle-start <s>]   Brand any video: DoomScroll mark at the bottom right + a short outro (needs ffmpeg)
 
 Options:
-  --theme classic|football|kpop   Video style (default classic)
+  --theme classic|3d|football|kpop   Video style (default classic)
   --language <id>                 en ar es fr de pt tr hi id ja ko zh (default: your DoomScroll setting, else en)
   --notes <file.json|->           Your write-up of the change: components, architecture, how it works (see SKILL.md)
   --out <file.mp4>                Where to save the video (default doomscroll-<id>.mp4)
@@ -201,7 +201,7 @@ const args = parseArgs(process.argv.slice(2))
 const [command, target] = args._
 if (args.help || !command) { process.stdout.write(`${HELP}\n`); process.exit(command || args.help ? 0 : 1) }
 const theme = args.theme || 'classic'
-if (!['classic', 'football', 'kpop'].includes(theme)) fail('--theme must be classic, football or kpop')
+if (!['classic', '3d', 'football', 'kpop'].includes(theme)) fail('--theme must be classic, 3d, football or kpop')
 const LANGUAGES = ['en', 'ar', 'es', 'fr', 'de', 'pt', 'tr', 'hi', 'id', 'ja', 'ko', 'zh']
 if (args.language && !LANGUAGES.includes(args.language)) fail(`--language must be one of ${LANGUAGES.join(' ')}`)
 /** Every DoomScroll video carries this tag once branded, so branding twice is a no-op. */
