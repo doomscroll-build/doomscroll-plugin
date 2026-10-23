@@ -19,7 +19,7 @@ const HELP = `Usage:
   doomscroll.mjs status <id>
   doomscroll.mjs download <id> [--out <file.mp4>] [--gif <file.gif>]
   doomscroll.mjs me
-  doomscroll.mjs watermark <video> [--out <file.mp4>]   Brand any video: DoomScroll mark at the bottom right + a short outro (needs ffmpeg)
+  doomscroll.mjs watermark <video> [--out <file.mp4>] [--jingle <audio> --jingle-start <s>]   Brand any video: DoomScroll mark at the bottom right + a short outro (needs ffmpeg)
 
 Options:
   --theme classic|football|kpop   Video style (default classic)
@@ -210,7 +210,7 @@ const OUTRO_SECONDS = 1.6
 const ASSETS = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets')
 
 /** A small DoomScroll mark at the bottom right, then a TikTok-style outro: the logo pops in on black, the name fades up under it and the jingle plays. */
-function watermark(input, output) {
+function watermark(input, output, jingle, jingleStart) {
   if (!input || !existsSync(input)) fail('watermark needs a video file')
   const out = resolve(output || input.replace(/(\.[^./]+)?$/, '-doomscroll.mp4'))
   const ffmpeg = process.env.FFMPEG || 'ffmpeg', ffprobe = process.env.FFPROBE || 'ffprobe'
@@ -225,6 +225,8 @@ function watermark(input, output) {
     if (resolve(input) !== out) copyFileSync(input, out)
     return out
   }
+  // Another sound for the outro (any audio file; only its first outro-length seconds from --jingle-start play, faded out).
+  if (jingle && !existsSync(jingle)) fail(`jingle ${jingle} not found`)
   const W = video.width, H = video.height, D = Number(probe.format.duration), O = OUTRO_SECONDS
   const unit = Math.min(W, H) / 1080, markWidth = Math.round(330 * unit), markY = Math.round(H * 0.42)
   // Pops past full size, then settles: 0 → 1.15 by 0.25 s, back to 1 by 0.4 s.
@@ -239,11 +241,11 @@ function watermark(input, output) {
     `[3:v]format=rgba,scale=${Math.round(560 * unit / 2) * 2}:-2,fade=in:st=0.35:d=0.3:alpha=1,setpts=PTS-STARTPTS+${D}/TB[name]`,
     `[v2][name]overlay=x=(W-w)/2:y=${markY + Math.round(markWidth * 0.62)}:enable='gte(t,${D})':eof_action=pass,format=yuv420p[v]`,
     // The jingle starts with the outro; the video's own audio (if any) is padded with silence under it.
-    `[4:a]aresample=48000,aformat=channel_layouts=stereo,adelay=delays=${Math.round(D * 1000)}:all=1,volume=0.45[jingle]`,
+    `[4:a]atrim=0:${O},afade=t=out:st=${O - 0.3}:d=0.3,aresample=48000,aformat=channel_layouts=stereo,adelay=delays=${Math.round(D * 1000)}:all=1,volume=0.45[jingle]`,
     hasAudio ? `[0:a]aresample=48000,aformat=channel_layouts=stereo,apad=pad_dur=${O}[voice];[voice][jingle]amix=inputs=2:duration=first:normalize=0[a]` : `[jingle]apad=whole_dur=${D + O}[a]`,
   ].join(';')
   const image = name => ['-loop', '1', '-framerate', '30', '-t', String(O), '-i', join(ASSETS, name)]
-  run(ffmpeg, ['-v', 'error', '-y', '-threads', '2', '-i', input, '-loop', '1', '-framerate', '30', '-t', String(D), '-i', join(ASSETS, 'watermark.png'), ...image('mark.png'), ...image('outro-text.png'), '-i', join(ASSETS, 'jingle.m4a'),
+  run(ffmpeg, ['-v', 'error', '-y', '-threads', '2', '-i', input, '-loop', '1', '-framerate', '30', '-t', String(D), '-i', join(ASSETS, 'watermark.png'), ...image('mark.png'), ...image('outro-text.png'), ...(jingle ? ['-ss', String(Number(jingleStart) || 0)] : []), '-i', jingle || join(ASSETS, 'jingle.m4a'),
     '-filter_complex', graph, '-map', '[v]', '-map', '[a]', '-c:a', 'aac', '-b:a', '160k',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-movflags', '+faststart', '-metadata', `comment=${BRAND_TAG}`, out])
   return out
@@ -258,7 +260,7 @@ if (command === 'login') await login()
 else if (command === 'logout') { try { const all = JSON.parse(readFileSync(CREDENTIALS, 'utf8')); delete all[origin]; Object.keys(all).length ? writeFileSync(CREDENTIALS, JSON.stringify(all, null, 2), { mode: 0o600 }) : rmSync(CREDENTIALS) } catch { /* nothing saved */ } process.stdout.write(`${JSON.stringify({ signedOut: true })}\n`) }
 else if (command === 'speak') await speak(target, args)
 else if (command === 'transcribe') await transcribe(target, args)
-else if (command === 'watermark') process.stdout.write(`${JSON.stringify({ watermarked: watermark(target, args.out) })}\n`)
+else if (command === 'watermark') process.stdout.write(`${JSON.stringify({ watermarked: watermark(target, args.out, args.jingle ?? process.env.DOOMSCROLL_JINGLE, args.jingleStart ?? process.env.DOOMSCROLL_JINGLE_START) })}\n`)
 else if (command === 'me') process.stdout.write(`${JSON.stringify(await call('/api/agent/me'))}\n`)
 else if (command === 'status') { if (!target) fail('status needs an id'); process.stdout.write(`${JSON.stringify((await call(`/api/agent/videos/${encodeURIComponent(target)}`)).video)}\n`) }
 else if (command === 'download') {
