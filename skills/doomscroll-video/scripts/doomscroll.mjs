@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Doomscroll agent client: submit a pull request or a local diff, poll until the video is ready, download the MP4; and use
-// Doomscroll's metered voice APIs (speech, word-timed transcription) without an OpenAI key of your own.
+// DoomScroll agent client: submit a pull request or a local diff, poll until the video is ready, download the MP4; and use
+// DoomScroll's metered voice APIs (speech, word-timed transcription) without an OpenAI key of your own.
 // Dependency-free (Node 18+). Reads the key from DOOMSCROLL_API_KEY or the browser sign-in saved by `login`, and never prints it.
 // MIT License. See ../../../LICENSE.
 import { execFileSync } from 'node:child_process'
@@ -19,11 +19,11 @@ const HELP = `Usage:
   doomscroll.mjs status <id>
   doomscroll.mjs download <id> [--out <file.mp4>] [--gif <file.gif>]
   doomscroll.mjs me
-  doomscroll.mjs watermark <video> [--out <file.mp4>]   Brand any video: Doomscroll mark at the bottom right + a short outro (needs ffmpeg)
+  doomscroll.mjs watermark <video> [--out <file.mp4>]   Brand any video: DoomScroll mark at the bottom right + a short outro (needs ffmpeg)
 
 Options:
   --theme classic|football|kpop   Video style (default classic)
-  --language <id>                 en ar es fr de pt tr hi id ja ko zh (default: your Doomscroll setting, else en)
+  --language <id>                 en ar es fr de pt tr hi id ja ko zh (default: your DoomScroll setting, else en)
   --notes <file.json|->           Your write-up of the change: components, architecture, how it works (see SKILL.md)
   --out <file.mp4>                Where to save the video (default doomscroll-<id>.mp4)
   --gif <file.gif>                Also save the silent GIF preview
@@ -32,10 +32,10 @@ Options:
 
 Sign-in (either one):
   doomscroll.mjs login   Opens a browser page; approve the code and the key is saved to ~/.config/doomscroll/credentials.json
-  DOOMSCROLL_API_KEY     A key from Doomscroll Settings -> Agent access (wins over the saved one)
+  DOOMSCROLL_API_KEY     A key from DoomScroll Settings -> Agent access (wins over the saved one)
 
-Voice for any OpenAI SDK: base URL <DOOMSCROLL_URL>/api/agent/v1 with the Doomscroll key as the API key
-(POST /audio/speech, POST /audio/transcriptions). Every call is paid in Doomscroll credits.
+Voice for any OpenAI SDK: base URL <DOOMSCROLL_URL>/api/agent/v1 with the DoomScroll key as the API key
+(POST /audio/speech, POST /audio/transcriptions). Every call is paid in DoomScroll credits.
 
 Environment:
   DOOMSCROLL_URL       Server origin (default https://doomscroll.build)
@@ -69,7 +69,7 @@ const CREDENTIALS = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config
 const saved = () => { try { return JSON.parse(readFileSync(CREDENTIALS, 'utf8'))[origin]?.apiKey } catch { return undefined } }
 const key = process.env.DOOMSCROLL_API_KEY || saved()
 const headers = () => {
-  if (!key) fail('not signed in. Run: doomscroll.mjs login (or export DOOMSCROLL_API_KEY from Doomscroll Settings -> Agent access).', 3)
+  if (!key) fail('not signed in. Run: doomscroll.mjs login (or export DOOMSCROLL_API_KEY from DoomScroll Settings -> Agent access).', 3)
   return { Authorization: `Bearer ${key}`, Accept: 'application/json' }
 }
 
@@ -100,7 +100,7 @@ async function login() {
   fail('the sign-in code expired; run login again')
 }
 
-/** Text to speech through Doomscroll (OpenAI gpt-4o-mini-tts upstream), written straight to a file. */
+/** Text to speech through DoomScroll (OpenAI gpt-4o-mini-tts upstream), written straight to a file. */
 async function speak(text, args) {
   if (!args.out) fail('speak needs --out <file.mp3>')
   const input = text === '-' ? readFileSync(0, 'utf8') : text
@@ -113,7 +113,7 @@ async function speak(text, args) {
   process.stdout.write(`${JSON.stringify({ file: args.out, creditsRemaining: Number(response.headers.get('x-doomscroll-credits-remaining')) })}\n`)
 }
 
-/** Speech to text through Doomscroll (OpenAI upstream); --words asks for word timestamps (verbose_json). */
+/** Speech to text through DoomScroll (OpenAI upstream); --words asks for word timestamps (verbose_json). */
 async function transcribe(file, args) {
   if (!file || !existsSync(file)) fail('transcribe needs an audio file')
   const form = new FormData()
@@ -204,12 +204,12 @@ const theme = args.theme || 'classic'
 if (!['classic', 'football', 'kpop'].includes(theme)) fail('--theme must be classic, football or kpop')
 const LANGUAGES = ['en', 'ar', 'es', 'fr', 'de', 'pt', 'tr', 'hi', 'id', 'ja', 'ko', 'zh']
 if (args.language && !LANGUAGES.includes(args.language)) fail(`--language must be one of ${LANGUAGES.join(' ')}`)
-/** Every Doomscroll video carries this tag once branded, so branding twice is a no-op. */
-const BRAND_TAG = 'Made with Doomscroll'
+/** Every DoomScroll video carries this tag once branded, so branding twice is a no-op. */
+const BRAND_TAG = 'Made with DoomScroll'
 const OUTRO_SECONDS = 1.6
 const ASSETS = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets')
 
-/** A small Doomscroll mark at the bottom right, then a TikTok-style outro: the logo pops in on black, the name fades up under it and the jingle plays. */
+/** A small DoomScroll mark at the bottom right, then a TikTok-style outro: the logo pops in on black, the name fades up under it and the jingle plays. */
 function watermark(input, output) {
   if (!input || !existsSync(input)) fail('watermark needs a video file')
   const out = resolve(output || input.replace(/(\.[^./]+)?$/, '-doomscroll.mp4'))
@@ -221,7 +221,7 @@ function watermark(input, output) {
   const probe = JSON.parse(run(ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', input]))
   const video = probe.streams.find(stream => stream.codec_type === 'video')
   if (!video) fail(`${input} has no video stream`)
-  if (probe.format.tags?.comment === BRAND_TAG) {
+  if (probe.format.tags?.comment?.toLowerCase() === BRAND_TAG.toLowerCase()) {
     if (resolve(input) !== out) copyFileSync(input, out)
     return out
   }
@@ -232,8 +232,8 @@ function watermark(input, output) {
   const hasAudio = probe.streams.some(stream => stream.codec_type === 'audio')
   const graph = [
     `[0:v]tpad=stop_duration=${O}:color=black,setsar=1[base]`,
-    `[1:v]scale=${Math.round(W * 0.24 / 2) * 2}:-2,format=rgba,colorchannelmixer=aa=0.8[wm]`,
-    `[base][wm]overlay=x=W-w-${Math.round(W * 0.035)}:y=H-h-${Math.round(H * 0.06)}:enable='lt(t,${D})'[v1]`,
+    `[1:v]scale=${Math.round(W * 0.15 / 2) * 2}:-2,format=rgba,colorchannelmixer=aa=0.8[wm]`,
+    `[base][wm]overlay=x=W-w-${Math.round(W * 0.1)}:y=H-h-${Math.round(H * 0.15)}:enable='lt(t,${D})'[v1]`,
     `[2:v]format=rgba,scale=w='max(2,trunc(${markWidth}*(${bounce})/2)*2)':h=-2:eval=frame,setpts=PTS-STARTPTS+${D}/TB[mark]`,
     `[v1][mark]overlay=x=(W-w)/2:y=${markY}-h/2:enable='gte(t,${D})':eof_action=pass[v2]`,
     `[3:v]format=rgba,scale=${Math.round(560 * unit / 2) * 2}:-2,fade=in:st=0.35:d=0.3:alpha=1,setpts=PTS-STARTPTS+${D}/TB[name]`,
