@@ -37,7 +37,8 @@ Send `Authorization: Bearer <key>` with a key from Settings → Agent access.
 1. Your agent reads the change and the code around it, and writes notes: every component, how they connect, what
    changed and what could break.
 2. Doomscroll turns the PR or diff plus the notes into a 30–90 second video, in any of 12 languages.
-3. Your agent downloads the MP4 and helps you put it in the PR. Doomscroll never posts to GitHub on its own.
+3. Your agent downloads the MP4 (with a small Doomscroll watermark and outro) and helps you put it in the PR. Doomscroll
+   never posts to GitHub on its own.
 
 Each video costs one credit, refunded if it fails. The PR or diff and the notes are sent to Doomscroll and its AI
 providers, so don't send code you can't share with them. Revoke access any time in Doomscroll **Settings → Agent
@@ -57,6 +58,9 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 | `POST /api/agent/v1/audio/speech`, `POST /api/agent/v1/audio/transcriptions` | OpenAI-compatible voice, metered in credits |
 | `POST /api/agent/device`, `POST /api/agent/device/token` | Browser sign-in by device code |
 | `POST /mcp` | The MCP server (Streamable HTTP; OAuth 2.1 with dynamic client registration and PKCE, or the key) |
+
+`doomscroll.mjs watermark <video>` adds the same watermark, outro and jingle to any video with your local ffmpeg (logo in
+`skills/doomscroll-video/assets/`).
 
 `theme`: `classic` (default), `football` or `kpop`. `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
 your Doomscroll setting). `notes`: `summary`, `why`, `howItWorks`, `architecture`, `risks`, `audience` (text), `flows`
