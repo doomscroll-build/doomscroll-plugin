@@ -1,7 +1,7 @@
-# Doomscroll for coding agents
+# DoomScroll for coding agents
 
 Ask your coding agent for a video of your PR or your changes. It gets back a narrated explainer, made on
-[Doomscroll](https://doomscroll.build)'s servers.
+[DoomScroll](https://doomscroll.build)'s servers.
 
 ## Install
 
@@ -11,7 +11,7 @@ npx skills add doomscroll-build/doomscroll-plugin
 
 Works with Claude Code, Codex, Cursor, Gemini CLI and [more](https://skills.sh). Then ask your agent:
 
-> Make a Doomscroll video of my changes
+> Make a DoomScroll video of my changes
 
 The first time, the agent shows you a sign-in link. Approve it with GitHub. You get 5 free videos a day.
 
@@ -36,12 +36,12 @@ Send `Authorization: Bearer <key>` with a key from Settings → Agent access.
 
 1. Your agent reads the change and the code around it, and writes notes: every component, how they connect, what
    changed and what could break.
-2. Doomscroll turns the PR or diff plus the notes into a 30–90 second video, in any of 12 languages.
-3. Your agent downloads the MP4 (with a small Doomscroll watermark and outro) and helps you put it in the PR. Doomscroll
+2. DoomScroll turns the PR or diff plus the notes into a 30–90 second video, in any of 12 languages.
+3. Your agent downloads the MP4 (with a small DoomScroll watermark and outro) and helps you put it in the PR. DoomScroll
    never posts to GitHub on its own.
 
-Each video costs one credit, refunded if it fails. The PR or diff and the notes are sent to Doomscroll and its AI
-providers, so don't send code you can't share with them. Revoke access any time in Doomscroll **Settings → Agent
+Each video costs one credit, refunded if it fails. The PR or diff and the notes are sent to DoomScroll and its AI
+providers, so don't send code you can't share with them. Revoke access any time in DoomScroll **Settings → Agent
 access**.
 
 ## API
@@ -63,7 +63,7 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 `skills/doomscroll-video/assets/`).
 
 `theme`: `classic` (default), `football` or `kpop`. `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
-your Doomscroll setting). `notes`: `summary`, `why`, `howItWorks`, `architecture`, `risks`, `audience` (text), `flows`
+your DoomScroll setting). `notes`: `summary`, `why`, `howItWorks`, `architecture`, `risks`, `audience` (text), `flows`
 (≤ 10 strings) and `components` (≤ 20 of `{name, kind, role?, change?, tech?}`); the skill explains each field.
 
 ## License

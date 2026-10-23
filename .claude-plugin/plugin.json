@@ -1,9 +1,9 @@
 {
   "name": "doomscroll",
-  "displayName": "Doomscroll",
+  "displayName": "DoomScroll",
   "version": "0.1.0",
   "description": "Make a short narrated video that explains a pull request or your local changes, from your coding agent.",
-  "author": { "name": "Doomscroll", "url": "https://doomscroll.build" },
+  "author": { "name": "DoomScroll", "url": "https://doomscroll.build" },
   "homepage": "https://doomscroll.build",
   "license": "MIT",
   "keywords": ["pull-request", "code-review", "video", "explainer"]
