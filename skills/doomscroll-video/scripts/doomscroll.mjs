@@ -4,9 +4,10 @@
 // Dependency-free (Node 18+). Reads the key from DOOMSCROLL_API_KEY or the browser sign-in saved by `login`, and never prints it.
 // MIT License. See ../../../LICENSE.
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const HELP = `Usage:
   doomscroll.mjs login                     Sign in through the browser (saves a key for this machine)
@@ -18,6 +19,7 @@ const HELP = `Usage:
   doomscroll.mjs status <id>
   doomscroll.mjs download <id> [--out <file.mp4>] [--gif <file.gif>]
   doomscroll.mjs me
+  doomscroll.mjs watermark <video> [--out <file.mp4>]   Brand any video: Doomscroll mark at the bottom right + a short outro (needs ffmpeg)
 
 Options:
   --theme classic|football|kpop   Video style (default classic)
@@ -37,6 +39,7 @@ Voice for any OpenAI SDK: base URL <DOOMSCROLL_URL>/api/agent/v1 with the Doomsc
 
 Environment:
   DOOMSCROLL_URL       Server origin (default https://doomscroll.build)
+  FFMPEG, FFPROBE      ffmpeg/ffprobe binaries for watermark (default: from PATH)
 
 Progress goes to stderr; the final result is one JSON object on stdout.`
 
@@ -201,6 +204,51 @@ const theme = args.theme || 'classic'
 if (!['classic', 'football', 'kpop'].includes(theme)) fail('--theme must be classic, football or kpop')
 const LANGUAGES = ['en', 'ar', 'es', 'fr', 'de', 'pt', 'tr', 'hi', 'id', 'ja', 'ko', 'zh']
 if (args.language && !LANGUAGES.includes(args.language)) fail(`--language must be one of ${LANGUAGES.join(' ')}`)
+/** Every Doomscroll video carries this tag once branded, so branding twice is a no-op. */
+const BRAND_TAG = 'Made with Doomscroll'
+const OUTRO_SECONDS = 1.6
+const ASSETS = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets')
+
+/** A small Doomscroll mark at the bottom right, then a TikTok-style outro: the logo pops in on black, the name fades up under it and the jingle plays. */
+function watermark(input, output) {
+  if (!input || !existsSync(input)) fail('watermark needs a video file')
+  const out = resolve(output || input.replace(/(\.[^./]+)?$/, '-doomscroll.mp4'))
+  const ffmpeg = process.env.FFMPEG || 'ffmpeg', ffprobe = process.env.FFPROBE || 'ffprobe'
+  const run = (bin, argv) => {
+    try { return execFileSync(bin, argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 10_000_000 }) }
+    catch (error) { fail(error.code === 'ENOENT' ? `${bin} not found; install ffmpeg` : `${bin} failed: ${String(error.stderr || error.message).trim().split('\n').slice(-3).join(' ')}`) }
+  }
+  const probe = JSON.parse(run(ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', input]))
+  const video = probe.streams.find(stream => stream.codec_type === 'video')
+  if (!video) fail(`${input} has no video stream`)
+  if (probe.format.tags?.comment === BRAND_TAG) {
+    if (resolve(input) !== out) copyFileSync(input, out)
+    return out
+  }
+  const W = video.width, H = video.height, D = Number(probe.format.duration), O = OUTRO_SECONDS
+  const unit = Math.min(W, H) / 1080, markWidth = Math.round(330 * unit), markY = Math.round(H * 0.42)
+  // Pops past full size, then settles: 0 → 1.15 by 0.25 s, back to 1 by 0.4 s.
+  const bounce = 'if(lt(t,0.25),t/0.25*1.15,if(lt(t,0.4),1.15-(t-0.25),1))'
+  const hasAudio = probe.streams.some(stream => stream.codec_type === 'audio')
+  const graph = [
+    `[0:v]tpad=stop_duration=${O}:color=black,setsar=1[base]`,
+    `[1:v]scale=${Math.round(W * 0.24 / 2) * 2}:-2,format=rgba,colorchannelmixer=aa=0.8[wm]`,
+    `[base][wm]overlay=x=W-w-${Math.round(W * 0.035)}:y=H-h-${Math.round(H * 0.06)}:enable='lt(t,${D})'[v1]`,
+    `[2:v]format=rgba,scale=w='max(2,trunc(${markWidth}*(${bounce})/2)*2)':h=-2:eval=frame,setpts=PTS-STARTPTS+${D}/TB[mark]`,
+    `[v1][mark]overlay=x=(W-w)/2:y=${markY}-h/2:enable='gte(t,${D})':eof_action=pass[v2]`,
+    `[3:v]format=rgba,scale=${Math.round(560 * unit / 2) * 2}:-2,fade=in:st=0.35:d=0.3:alpha=1,setpts=PTS-STARTPTS+${D}/TB[name]`,
+    `[v2][name]overlay=x=(W-w)/2:y=${markY + Math.round(markWidth * 0.62)}:enable='gte(t,${D})':eof_action=pass,format=yuv420p[v]`,
+    // The jingle starts with the outro; the video's own audio (if any) is padded with silence under it.
+    `[4:a]aresample=48000,aformat=channel_layouts=stereo,adelay=delays=${Math.round(D * 1000)}:all=1,volume=0.45[jingle]`,
+    hasAudio ? `[0:a]aresample=48000,aformat=channel_layouts=stereo,apad=pad_dur=${O}[voice];[voice][jingle]amix=inputs=2:duration=first:normalize=0[a]` : `[jingle]apad=whole_dur=${D + O}[a]`,
+  ].join(';')
+  const image = name => ['-loop', '1', '-framerate', '30', '-t', String(O), '-i', join(ASSETS, name)]
+  run(ffmpeg, ['-v', 'error', '-y', '-threads', '2', '-i', input, '-loop', '1', '-framerate', '30', '-t', String(D), '-i', join(ASSETS, 'watermark.png'), ...image('mark.png'), ...image('outro-text.png'), '-i', join(ASSETS, 'jingle.m4a'),
+    '-filter_complex', graph, '-map', '[v]', '-map', '[a]', '-c:a', 'aac', '-b:a', '160k',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-movflags', '+faststart', '-metadata', `comment=${BRAND_TAG}`, out])
+  return out
+}
+
 function readNotes(path) {
   if (!path) return undefined
   try { return JSON.parse(readFileSync(path === '-' ? 0 : path, 'utf8')) } catch (error) { fail(`--notes must be a JSON file: ${error.message}`) }
@@ -210,6 +258,7 @@ if (command === 'login') await login()
 else if (command === 'logout') { try { const all = JSON.parse(readFileSync(CREDENTIALS, 'utf8')); delete all[origin]; Object.keys(all).length ? writeFileSync(CREDENTIALS, JSON.stringify(all, null, 2), { mode: 0o600 }) : rmSync(CREDENTIALS) } catch { /* nothing saved */ } process.stdout.write(`${JSON.stringify({ signedOut: true })}\n`) }
 else if (command === 'speak') await speak(target, args)
 else if (command === 'transcribe') await transcribe(target, args)
+else if (command === 'watermark') process.stdout.write(`${JSON.stringify({ watermarked: watermark(target, args.out) })}\n`)
 else if (command === 'me') process.stdout.write(`${JSON.stringify(await call('/api/agent/me'))}\n`)
 else if (command === 'status') { if (!target) fail('status needs an id'); process.stdout.write(`${JSON.stringify((await call(`/api/agent/videos/${encodeURIComponent(target)}`)).video)}\n`) }
 else if (command === 'download') {
