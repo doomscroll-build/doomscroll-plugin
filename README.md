@@ -29,7 +29,7 @@ One URL, `https://doomscroll.build/mcp`; your client opens a browser to sign in 
 - **Qwen Code**: `qwen mcp add --transport http doomscroll https://doomscroll.build/mcp`
 - **Cursor**: in `~/.cursor/mcp.json`: `{"mcpServers": {"doomscroll": {"url": "https://doomscroll.build/mcp"}}}`
 
-Tools: `create_video`, `get_video` (status, then the MP4, GIF and watch links) and `account`. No OAuth in your client?
+Tools: `create_video`, `get_video`, `set_video_sharing` and `account`. A local-change video is public only to anyone with its unguessable link by default; a PR video defaults private. Either can be changed later. No OAuth in your client?
 Send `Authorization: Bearer <key>` with a key from Settings → Agent access.
 
 ## What happens
@@ -51,9 +51,10 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 
 | Request | What it does |
 | --- | --- |
-| `POST /api/agent/videos` `{"pr": {"owner", "repo", "number", "sha"?}, "theme"?, "language"?, "notes"?, "screens"?}` | Video of a GitHub PR (default: its head commit) |
-| `POST /api/agent/videos` `{"change": {"title", "description"?, "diff", "repo"?, "files"?: [{"path", "content"}]}, "theme"?, "language"?, "notes"?, "screens"?}` | Video of a unified diff (≤ 600 KB, ≤ 300 files, ≤ 40 excerpts of ≤ 100 KB) |
-| `GET /api/agent/videos/<id>` | `status`, `stage`, `progress.percent`, and when done `video.mp4Url`, `video.gifUrl` (both need the key), `video.previewUrl` (public GIF), `video.watchUrl` |
+| `POST /api/agent/videos` `{"pr": {"owner", "repo", "number", "sha"?}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?}` | Video of a GitHub PR (default: its head commit; sharing defaults off) |
+| `POST /api/agent/videos` `{"change": {"title", "description"?, "diff", "repo"?, "files"?: [{"path", "content"}]}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?}` | Video of a unified diff (sharing defaults on; ≤ 600 KB, ≤ 300 files, ≤ 40 excerpts of ≤ 100 KB) |
+| `GET /api/agent/videos/<id>` | Status/progress, `shareable`, and when ready authenticated downloads plus `video.shareUrl` when sharing is on |
+| `POST /api/agent/videos/<id>/sharing` `{"shareable": true|false}` | Enable or revoke its stable unguessable public MP4 link |
 | `GET /api/agent/me` | The key's GitHub login and credits |
 | `POST /api/agent/v1/audio/speech`, `POST /api/agent/v1/audio/transcriptions` | OpenAI-compatible voice, metered in credits |
 | `POST /api/agent/device`, `POST /api/agent/device/token` | Browser sign-in by device code |
@@ -62,7 +63,7 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 `doomscroll.mjs watermark <video>` adds the same watermark, outro and jingle to any video with your local ffmpeg (logo in
 `skills/doomscroll-video/assets/`).
 
-`screens`: up to 4 `{caption, image}` screenshots of the UI the change touches (image = a base64 data URL, PNG/JPEG/WebP ≤ 1.5 MB); the video cuts to each one. `theme`: `classic` (default), `football` or `kpop`. `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
+`shareable`: local changes default `true`; PR videos default `false`. The stable `video.shareUrl` contains a random 128-bit locator. Change it later with `doomscroll.mjs share <id>` / `unshare <id>` or `set_video_sharing`. `screens`: up to 4 `{caption, image}` screenshots of the UI the change touches (image = a base64 data URL, PNG/JPEG/WebP ≤ 1.5 MB); the video cuts to each one. `theme`: `classic` (default), `football` or `kpop`. `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
 your DoomScroll setting). `notes`: `summary`, `why`, `howItWorks`, `architecture`, `risks`, `audience` (text), `flows`
 (≤ 10 strings) and `components` (≤ 20 of `{name, kind, role?, change?, tech?}`); the skill explains each field.
 
