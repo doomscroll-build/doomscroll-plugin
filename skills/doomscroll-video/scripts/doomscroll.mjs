@@ -276,7 +276,7 @@ function readScreens(values) {
       catch { fail(`--screen ${path} is over 1.5 MB; shrink it (ffmpeg was not available to do it)`) }
       if (bytes.length > 1_500_000) fail(`--screen ${path} is still over 1.5 MB after shrinking`)
     }
-    return { caption: caption.slice(0, 120), image: `data:image/${type};base64,${bytes.toString('base64')}` }
+    return { caption: caption.length > 120 ? `${caption.slice(0, 119).replace(/\s+\S*$/, '')}…` : caption, image: `data:image/${type};base64,${bytes.toString('base64')}` }
   })
 }
 
