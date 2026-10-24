@@ -67,7 +67,7 @@ answers:
   `pt` Portuguese, `tr` Turkish, `hi` Hindi, `id` Indonesian, `ja` Japanese, `ko` Korean, `zh` Chinese. Without an
   answer, leave `--language` off and DoomScroll uses the user's own setting (English by default). If the user writes
   to you in another language, suggest that one.
-- **Skin**: `classic` (default, an animated review explainer, a few minutes), `3d` (the same story on a 3D stage, about 15 minutes), or `football` / `kpop` (AI-generated
+- **Skin**: `classic` (default, an animated review explainer, a few minutes), or `football` / `kpop` (AI-generated
   footage, much slower). Use classic unless they ask.
 - **Who will watch it** (reviewers on the team, a manager, new joiners), if it changes the depth.
 - Tell them once that the PR or diff and your notes go to DoomScroll and its AI providers, and ask whether any of it
