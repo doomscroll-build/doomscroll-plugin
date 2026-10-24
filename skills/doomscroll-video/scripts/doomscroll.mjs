@@ -182,7 +182,17 @@ async function wait(id, args) {
   const deadline = Date.now() + Number(args.timeout || 60) * 60_000
   let last = ''
   for (;;) {
-    const { video } = await call(`/api/agent/videos/${id}`)
+    // A deploy or a network blip must not end the wait (the render keeps going on the server): retry 5xx and connection errors.
+    const response = await fetch(`${origin}/api/agent/videos/${id}`, { headers: headers(), redirect: 'error' }).catch(error => ({ blip: error.message }))
+    if (response.blip || response.status >= 500) {
+      if (Date.now() > deadline) fail(`could not reach ${origin}: ${response.blip || response.status}`)
+      if (last !== 'blip') { log(`connection problem (${response.blip || response.status}), still waiting`); last = 'blip' }
+      await new Promise(resolve => setTimeout(resolve, 10_000))
+      continue
+    }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) fail(`${response.status} ${data.error || response.statusText}`, response.status === 401 ? 3 : 1)
+    const { video } = data
     const line = `${video.status}: ${video.stage}${video.progress.percent === null ? '' : ` (${video.progress.percent}%)`}`
     if (line !== last) { log(line); last = line }
     if (video.status === 'succeeded' || video.status === 'failed') return video
