@@ -128,6 +128,19 @@ Before you submit, check that nothing is left behind:
   change reroutes something.
 - The language the user asked for is set with `--language`.
 
+**Screenshots: required whenever the change touches anything a person sees** (a page, a component, a banner, an email,
+a CLI's output). A video of a UI change that only shows boxes and arrows has failed: the reviewer wants to see the UI.
+
+- Capture 1–4 screenshots of the real UI: the "before" (from the base branch or production) and the "after" (your branch
+  running locally), or only the "after" for something new. Use the project's own dev server and a headless browser
+  (Playwright: `npx playwright screenshot --viewport-size=1280,800 <url> after.png`, or `--device="iPhone 13"` for a phone
+  view), an existing screenshot in the PR description, or a terminal capture. Crop to the part that changed.
+- Caption each one with what to look at: `"Before: no way to hand setup to an agent"`, `"After: the Onboard your agent pill
+  next to the sign-in button"`.
+- Send them with `--screen after.png="After: …"` (repeat, up to 4; PNG, JPEG or WebP under 1.5 MB, larger ones are
+  shrunk with ffmpeg when it is installed), or `screens: [{caption, image}]` with the MCP tool (image = a base64 data URL).
+- The video cuts to each screenshot at the beat it proves, so a reviewer sees the real screen, not just the diagram.
+
 Rules for the notes:
 
 - Facts from the code only. Mark anything inferred as `(likely)` and never invent a component.

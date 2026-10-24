@@ -25,6 +25,7 @@ Options:
   --theme classic|football|kpop   Video style (default classic)
   --language <id>                 en ar es fr de pt tr hi id ja ko zh (default: your DoomScroll setting, else en)
   --notes <file.json|->           Your write-up of the change: components, architecture, how it works (see SKILL.md)
+  --screen <image>=<caption>      A screenshot of the UI the change touches (repeat, up to 4), e.g. --screen before.png="Before: no bell"
   --out <file.mp4>                Where to save the video (default doomscroll-<id>.mp4)
   --gif <file.gif>                Also save the silent GIF preview
   --no-wait                       Submit and print the id without waiting
@@ -48,7 +49,7 @@ const fail = (message, code = 1) => { process.stderr.write(`doomscroll: ${messag
 const log = message => process.stderr.write(`${message}\n`)
 
 function parseArgs(argv) {
-  const args = { _: [], include: [] }
+  const args = { _: [], include: [], screen: [] }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '-h' || arg === '--help') args.help = true
@@ -58,7 +59,7 @@ function parseArgs(argv) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
       const value = argv[++i]
       if (value === undefined) fail(`${arg} needs a value`)
-      if (key === 'include') args.include.push(value); else args[key] = value
+      if (key === 'include' || key === 'screen') args[key].push(value); else args[key] = value
     } else args._.push(arg)
   }
   return args
@@ -234,8 +235,8 @@ function watermark(input, output, jingle, jingleStart) {
   const hasAudio = probe.streams.some(stream => stream.codec_type === 'audio')
   const graph = [
     `[0:v]tpad=stop_duration=${O}:color=black,setsar=1[base]`,
-    `[1:v]scale=${Math.round(W * 0.15 / 2) * 2}:-2,format=rgba,colorchannelmixer=aa=0.8[wm]`,
-    `[base][wm]overlay=x=W-w-${Math.round(W * 0.1)}:y=H-h-${Math.round(H * 0.15)}:enable='lt(t,${D})'[v1]`,
+    `[1:v]scale=${Math.round(W * 0.15 / 2) * 2}:-2,format=rgba,colorchannelmixer=aa=0.55[wm]`,
+    `[base][wm]overlay=x=W-w-${Math.round(W * 0.1)}:y=H-h-${Math.round(H * 0.035)}:enable='lt(t,${D})'[v1]`,
     `[2:v]format=rgba,scale=w='max(2,trunc(${markWidth}*(${bounce})/2)*2)':h=-2:eval=frame,setpts=PTS-STARTPTS+${D}/TB[mark]`,
     `[v1][mark]overlay=x=(W-w)/2:y=${markY}-h/2:enable='gte(t,${D})':eof_action=pass[v2]`,
     `[3:v]format=rgba,scale=${Math.round(560 * unit / 2) * 2}:-2,fade=in:st=0.35:d=0.3:alpha=1,setpts=PTS-STARTPTS+${D}/TB[name]`,
@@ -249,6 +250,24 @@ function watermark(input, output, jingle, jingleStart) {
     '-filter_complex', graph, '-map', '[v]', '-map', '[a]', '-c:a', 'aac', '-b:a', '160k',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-movflags', '+faststart', '-metadata', `comment=${BRAND_TAG}`, out])
   return out
+}
+
+/** `--screen <image>=<caption>` files as data URLs; one over 1.5 MB is shrunk to a 1080 px wide JPEG with ffmpeg when it is installed. */
+function readScreens(values) {
+  if (values.length > 4) fail('at most 4 --screen images')
+  return values.map(value => {
+    const at = value.indexOf('='), path = at < 0 ? value : value.slice(0, at), caption = (at < 0 ? '' : value.slice(at + 1)).trim()
+    if (!caption) fail(`--screen ${path} needs a caption: --screen ${path}="After: the new button"`)
+    if (!existsSync(path)) fail(`--screen ${path} not found`)
+    let bytes = readFileSync(path), type = { png: 'png', jpg: 'jpeg', jpeg: 'jpeg', webp: 'webp' }[path.split('.').pop().toLowerCase()]
+    if (!type) fail(`--screen ${path} must be a PNG, JPEG or WebP`)
+    if (bytes.length > 1_500_000) {
+      try { bytes = execFileSync(process.env.FFMPEG || 'ffmpeg', ['-v', 'error', '-i', path, '-vf', "scale='min(1080,iw)':-2", '-frames:v', '1', '-q:v', '4', '-f', 'image2pipe', '-c:v', 'mjpeg', '-'], { maxBuffer: 50_000_000 }); type = 'jpeg' }
+      catch { fail(`--screen ${path} is over 1.5 MB; shrink it (ffmpeg was not available to do it)`) }
+      if (bytes.length > 1_500_000) fail(`--screen ${path} is still over 1.5 MB after shrinking`)
+    }
+    return { caption: caption.slice(0, 120), image: `data:image/${type};base64,${bytes.toString('base64')}` }
+  })
 }
 
 function readNotes(path) {
@@ -269,8 +288,8 @@ else if (command === 'download') {
   if (video.status !== 'succeeded') fail(`video is ${video.status}: ${video.error || video.stage}`)
   await finish(video, args)
 } else if (command === 'pr' || command === 'local') {
-  const notes = readNotes(args.notes)
-  const extras = { theme, ...(args.language ? { language: args.language } : {}), ...(notes ? { notes } : {}) }
+  const notes = readNotes(args.notes), screens = readScreens(args.screen)
+  const extras = { theme, ...(args.language ? { language: args.language } : {}), ...(notes ? { notes } : {}), ...(screens.length ? { screens } : {}) }
   const body = command === 'pr' ? { pr: parsePr(target), ...extras } : { change: localChange(args), ...extras }
   const { video, credits } = await call('/api/agent/videos', body)
   log(`queued ${video.id} (${credits.unlimited ? 'unlimited' : `${credits.remaining} credits left`})`)

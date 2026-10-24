@@ -51,8 +51,8 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 
 | Request | What it does |
 | --- | --- |
-| `POST /api/agent/videos` `{"pr": {"owner", "repo", "number", "sha"?}, "theme"?, "language"?, "notes"?}` | Video of a GitHub PR (default: its head commit) |
-| `POST /api/agent/videos` `{"change": {"title", "description"?, "diff", "repo"?, "files"?: [{"path", "content"}]}, "theme"?, "language"?, "notes"?}` | Video of a unified diff (≤ 600 KB, ≤ 300 files, ≤ 40 excerpts of ≤ 100 KB) |
+| `POST /api/agent/videos` `{"pr": {"owner", "repo", "number", "sha"?}, "theme"?, "language"?, "notes"?, "screens"?}` | Video of a GitHub PR (default: its head commit) |
+| `POST /api/agent/videos` `{"change": {"title", "description"?, "diff", "repo"?, "files"?: [{"path", "content"}]}, "theme"?, "language"?, "notes"?, "screens"?}` | Video of a unified diff (≤ 600 KB, ≤ 300 files, ≤ 40 excerpts of ≤ 100 KB) |
 | `GET /api/agent/videos/<id>` | `status`, `stage`, `progress.percent`, and when done `video.mp4Url`, `video.gifUrl` (both need the key), `video.previewUrl` (public GIF), `video.watchUrl` |
 | `GET /api/agent/me` | The key's GitHub login and credits |
 | `POST /api/agent/v1/audio/speech`, `POST /api/agent/v1/audio/transcriptions` | OpenAI-compatible voice, metered in credits |
@@ -62,7 +62,7 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 `doomscroll.mjs watermark <video>` adds the same watermark, outro and jingle to any video with your local ffmpeg (logo in
 `skills/doomscroll-video/assets/`).
 
-`theme`: `classic` (default), `football` or `kpop`. `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
+`screens`: up to 4 `{caption, image}` screenshots of the UI the change touches (image = a base64 data URL, PNG/JPEG/WebP ≤ 1.5 MB); the video cuts to each one. `theme`: `classic` (default), `football` or `kpop`. `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
 your DoomScroll setting). `notes`: `summary`, `why`, `howItWorks`, `architecture`, `risks`, `audience` (text), `flows`
 (≤ 10 strings) and `components` (≤ 20 of `{name, kind, role?, change?, tech?}`); the skill explains each field.
 
