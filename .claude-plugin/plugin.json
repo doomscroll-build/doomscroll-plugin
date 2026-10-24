@@ -1,7 +1,7 @@
 {
   "name": "doomscroll",
   "displayName": "DoomScroll",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Make a short narrated video that explains a pull request or your local changes, from your coding agent.",
   "author": { "name": "DoomScroll", "url": "https://doomscroll.build" },
   "homepage": "https://doomscroll.build",
