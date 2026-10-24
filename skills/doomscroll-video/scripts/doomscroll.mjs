@@ -28,6 +28,8 @@ Options:
   --language <id>                 en ar es fr de pt tr hi id ja ko zh (default: your DoomScroll setting, else en)
   --notes <file.json|->           Your write-up of the change: components, architecture, how it works (see SKILL.md)
   --screen <image>=<caption>      A screenshot of the UI the change touches (repeat, up to 4), e.g. --screen before.png="Before: no bell"
+  --publish                      PR only: post progress, failures and the hosted video link
+  --no-publish                   Keep the video private to DoomScroll (default)
   --shareable                    Enable a stable unguessable public MP4 link
   --private                      Disable the public MP4 link (local defaults shared; PR defaults private)
   --out <file.mp4>                Where to save the video (default doomscroll-<id>.mp4)
@@ -59,6 +61,8 @@ function parseArgs(argv) {
     if (arg === '-h' || arg === '--help') args.help = true
     else if (arg === '--no-wait') args.noWait = true
     else if (arg === '--words') args.words = true
+    else if (arg === '--publish') args.publish = true
+    else if (arg === '--no-publish') args.noPublish = true
     else if (arg === '--shareable') args.shareable = true
     else if (arg === '--private') args.private = true
     else if (arg.startsWith('--')) {
@@ -211,7 +215,7 @@ async function finish(video, args) {
   if (video.status === 'failed') { process.stdout.write(`${JSON.stringify({ id: video.id, status: 'failed', error: video.error })}\n`); process.exit(2) }
   const mp4 = await download(video.video.mp4Url, args.out || `doomscroll-${video.id}.mp4`)
   const gif = args.gif ? await download(video.video.gifUrl, args.gif) : undefined
-  process.stdout.write(`${JSON.stringify({ id: video.id, status: 'succeeded', mp4, ...(gif ? { gif } : {}), previewUrl: video.video.previewUrl, watchUrl: video.video.watchUrl, shareable: video.shareable, shareUrl: video.video.shareUrl })}\n`)
+  process.stdout.write(`${JSON.stringify({ id: video.id, status: 'succeeded', mp4, ...(gif ? { gif } : {}), previewUrl: video.video.previewUrl, watchUrl: video.video.watchUrl, publish: video.publish, shareable: video.shareable, shareUrl: video.video.shareUrl })}\n`)
 }
 
 const args = parseArgs(process.argv.slice(2))
@@ -221,6 +225,8 @@ const theme = args.theme || 'classic'
 if (!['classic', 'football', 'kpop'].includes(theme)) fail('--theme must be classic, football or kpop')
 const LANGUAGES = ['en', 'ar', 'es', 'fr', 'de', 'pt', 'tr', 'hi', 'id', 'ja', 'ko', 'zh']
 if (args.language && !LANGUAGES.includes(args.language)) fail(`--language must be one of ${LANGUAGES.join(' ')}`)
+if (args.publish && args.noPublish) fail('choose --publish or --no-publish, not both')
+if (args.publish && command === 'local') fail('--publish is only available for pull requests')
 if (args.shareable && args.private) fail('choose --shareable or --private, not both')
 /** Every DoomScroll video carries this tag once branded, so branding twice is a no-op. */
 const BRAND_TAG = 'Made with DoomScroll'
@@ -313,7 +319,7 @@ else if (command === 'download') {
   const notes = readNotes(args.notes), screens = readScreens(args.screen)
   const sharing = args.shareable ? { shareable: true } : args.private ? { shareable: false } : {}
   const extras = { theme, ...(args.language ? { language: args.language } : {}), ...(notes ? { notes } : {}), ...(screens.length ? { screens } : {}), ...sharing }
-  const body = command === 'pr' ? { pr: parsePr(target), ...extras } : { change: localChange(args), ...extras }
+  const body = command === 'pr' ? { pr: parsePr(target), ...extras, ...(args.publish ? { publish: true } : args.noPublish ? { publish: false } : {}) } : { change: localChange(args), ...extras }
   const { video, credits } = await call('/api/agent/videos', body)
   log(`queued ${video.id} (${credits.unlimited ? 'unlimited' : `${credits.remaining} credits left`})`)
   if (args.noWait) process.stdout.write(`${JSON.stringify({ id: video.id, status: video.status })}\n`)

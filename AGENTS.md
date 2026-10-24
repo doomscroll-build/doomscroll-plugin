@@ -17,6 +17,8 @@ The short version:
 4. Run `node <path>/skills/doomscroll-video/scripts/doomscroll.mjs pr owner/repo#123 --notes doomscroll-notes.json --out doomscroll.mp4 --gif doomscroll.gif`
    for a PR, or `... local --title "<one line>" --description "<what and why>" --out doomscroll.mp4 --gif doomscroll.gif`
    for local changes. It submits, polls and downloads; it can take several minutes. `share <id>` / `unshare <id>` changes the stable public MP4 link without rerendering.
-5. Offer to put it in the PR: the user drags the MP4 into the PR description or a comment on github.com (GitHub plays
-   it inline), or, with their approval, `gh pr comment` with `[![Video walkthrough](previewUrl)](watchUrl)`.
-   DoomScroll never posts to GitHub for agent videos.
+5. When the user wants the video in a PR or asks for a video test report there, add `--publish` or send MCP `publish: true`.
+   DoomScroll posts status, its hosted preview/link, and failure guidance through the user's GitHub account. No organization
+   App installation is needed. Repository write access and Stealth mode off are required. Without this opt-in, requests stay private.
+6. Never upload DoomScroll MP4s to GitHub or write a separate `gh pr comment` publication path. All videos stay on DoomScroll.
+   Installing the plugin alone is not a PR-creation hook: actually submit the requested video and track its returned job id.
