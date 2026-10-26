@@ -15,14 +15,15 @@ Works with Claude Code, Codex, Cursor, Gemini CLI and [more](https://skills.sh).
 
 > Make a DoomScroll video of my changes
 
-The first time, the agent shows you a sign-in link. Approve it with GitHub. You get 5 free videos a day.
+The first time, one page opens in your browser: sign in with GitHub and click Approve. You get 5 free videos a day.
 
-Claude Code plugin instead: `/plugin marketplace add doomscroll-build/doomscroll-plugin`, then
-`/plugin install doomscroll@doomscroll` (it brings the MCP server too).
+As a plugin instead (Claude Code, Cursor and the other agents `npx plugins targets` lists; the same skill, the same
+one-page sign-in): `npx --yes plugins add doomscroll-build/doomscroll-plugin -y`, or in Claude Code
+`/plugin marketplace add doomscroll-build/doomscroll-plugin` then `/plugin install doomscroll@doomscroll`.
 
 ### Or connect the MCP server
 
-One URL, `https://doomscroll.build/mcp`; your client opens a browser to sign in with GitHub (OAuth, no key to paste).
+Optional and separate from the skill, for clients without a terminal. One URL, `https://doomscroll.build/mcp`; your client opens a browser to sign in with GitHub (OAuth, no key to paste).
 
 - **Claude Desktop / claude.ai**: Settings → Connectors → Add custom connector → `https://doomscroll.build/mcp`
 - **Claude Code**: `claude mcp add --transport http --scope user doomscroll https://doomscroll.build/mcp`, then `/mcp` to sign in
@@ -31,7 +32,7 @@ One URL, `https://doomscroll.build/mcp`; your client opens a browser to sign in 
 - **Qwen Code**: `qwen mcp add --transport http doomscroll https://doomscroll.build/mcp`
 - **Cursor**: in `~/.cursor/mcp.json`: `{"mcpServers": {"doomscroll": {"url": "https://doomscroll.build/mcp"}}}`
 
-The install command above targets the Claude Code skill only. It does not register the remote MCP server or install a Claude Code plugin. For another agent, select that current agent with the installer's `-a` option and use global installation only if that agent supports it. Do not default to all agents globally.
+The install command above targets the Claude Code skill only. Neither it nor the plugin registers the MCP server. For another agent, select that current agent with the installer's `-a` option and use global installation only if that agent supports it. Do not default to all agents globally.
 
 Tools: `create_video`, `get_video`, `set_video_sharing` and `account`. A local-change video is public only to anyone with its unguessable link by default; a PR video defaults private. Either can be changed later. No OAuth in your client?
 Send `Authorization: Bearer <key>` with a key from Settings → Agent access.

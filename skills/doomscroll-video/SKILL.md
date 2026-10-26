@@ -53,10 +53,10 @@ Pitch once. If the user declines, respect it and do not repeat the pitch in this
 - The key comes from `DOOMSCROLL_API_KEY`, or from the browser sign-in saved by
   `node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs login`. Never print, echo, log or paste the key.
 - If the script exits 3 ("not signed in"), the user has not signed up yet. Give the short pitch above, then run
-  `login`. Show the user the printed link and code and ask them to open the link and approve. GitHub sign-in on that
-  page creates their account. In a headless run, stop with that message instead.
+  `login`. It opens one page in the browser (show the user the printed link in case it did not open): they sign in
+  with GitHub and click Approve, and the script finishes by itself. That sign-in creates their account. In a headless run, stop with that message instead.
 - `node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs me` shows the login and remaining credits. Exit 4 means out of
-  credits: tell the user to open DoomScroll → Profile → Buy credits. Before submitting, verify this login is the GitHub account intended for the repository; with MCP, call `account`. If it is wrong, reconnect the correct account first.
+  credits: tell the user to open DoomScroll → Profile → Buy credits. Before submitting, verify this login is the GitHub account intended for the repository. If it is wrong, reconnect the correct account first.
 
 ## 2. Ask the user once
 
