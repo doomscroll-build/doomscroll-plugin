@@ -36,7 +36,7 @@ When you ask for a video yourself, it opens in your browser, and the agent also 
 
 Optional and separate from the skill, for clients without a terminal. One URL, `https://doomscroll.build/mcp`; your client opens a browser to sign in with GitHub (OAuth, no key to paste).
 
-- **Claude Desktop / claude.ai**: Settings → Connectors → Add custom connector → `https://doomscroll.build/mcp`
+- **Claude (web, desktop, mobile)**: [**Add to Claude**](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=DoomScroll&connectorUrl=https%3A%2F%2Fdoomscroll.build%2Fmcp) (opens Claude's connector dialog already filled in: click Add, then Connect)
 - **Claude Code**: `claude mcp add --transport http --scope user doomscroll https://doomscroll.build/mcp`, then `/mcp` to sign in
 - **Codex**: in `~/.codex/config.toml` add `[mcp_servers.doomscroll]` with `url = "https://doomscroll.build/mcp"`, then `codex mcp login doomscroll`
 - **Gemini CLI**: `gemini mcp add -s user --transport http doomscroll https://doomscroll.build/mcp`, then `/mcp auth doomscroll`
