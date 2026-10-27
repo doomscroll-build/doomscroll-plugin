@@ -70,7 +70,7 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 | --- | --- |
 | `POST /api/agent/videos` `{"pr": {"owner", "repo", "number", "sha"?}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?, "publish"?, "auto"?}` | Video of a GitHub PR (default: its head commit; sharing defaults off). One video per PR commit: a published one (e.g. the DoomScroll bot's) or your own is returned instead of a new one, at no charge. `auto: true` (you are making it unasked) answers `200 {"video": null, "automatic": true, "watchUrl"}` when the GitHub App will make it. `automatic: false` plus `connectUrl` means GitHub is not connected for automatic videos |
 | `POST /api/agent/videos` `{"change": {"title", "description"?, "diff", "repo"?, "files"?: [{"path", "content"}]}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?}` | Video of a unified diff (sharing defaults on; ≤ 600 KB, ≤ 300 files, ≤ 40 excerpts of ≤ 100 KB) |
-| `GET /api/agent/videos/<id>` | Status/progress, `publish`, `shareable`, and when ready authenticated downloads plus `video.shareUrl` when sharing is on |
+| `GET /api/agent/videos/<id>` | Status/progress, `publish`, `shareable`, `links`, and when ready authenticated downloads |
 | `POST /api/agent/videos/<id>/sharing` `{"shareable": true|false}` | Enable or revoke its stable unguessable public MP4 link |
 | `GET /api/agent/me` | The key's GitHub login, credits and `connection` (`automatic`: the GitHub App makes your PR videos by itself; `installations`, `finished`, `failed`, `connectUrl`) |
 | `POST /api/agent/v1/audio/speech`, `POST /api/agent/v1/audio/transcriptions` | OpenAI-compatible voice, metered in credits |
@@ -79,6 +79,8 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 
 `doomscroll.mjs watermark <video>` adds the same watermark, outro and jingle to any video with your local ffmpeg (logo in
 `skills/doomscroll-video/assets/`).
+
+Every video answer carries `links` from the moment it is queued: where the video will be (`watchUrl` its DoomScroll page, `previewUrl` the public silent GIF, `shareUrl` the public MP4 when sharing is on). They go live when it is done, so a workflow can pass them on without waiting.
 
 `publish`: PR-only explicit opt-in, default `false`. Repeating a completed private request with publication enabled reuses its saved video without another render or credit. This does not enable public MP4 sharing. Installing the MCP server or the skill alone does not submit PRs; only the Claude Code plugin's hooks do, and `auto off` stops them.
 

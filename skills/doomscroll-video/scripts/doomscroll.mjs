@@ -38,7 +38,7 @@ Options:
   --auto                          PR only: you are making it on your own (after a push), not because the user asked; when the
                                   DoomScroll GitHub App makes this PR's videos already, nothing is queued and its link is printed
   --open                          Open the finished video in the browser (its DoomScroll page, else the share link, else the MP4)
-  --no-wait                       Submit and print the id without waiting
+  --no-wait                       Submit and print the id and the links the video will have, without waiting
   --timeout <minutes>             Give up waiting after this long (default 60)
 
 Sign-in (either one):
@@ -355,7 +355,9 @@ else if (command === 'download') {
     process.exit(0)
   }
   log(`queued ${video.id} (${credits.unlimited ? 'unlimited' : `${credits.remaining} credits left`})`)
+  // Where the video will be, known now: the links go live when it is done, so a caller can hand them on without waiting.
+  if (video.links?.watchUrl) log(`it will be at ${video.links.watchUrl}`)
   const tip = automatic === false ? { tip: `Connect GitHub at ${connectUrl} and every new PR gets its video automatically.` } : {}
-  if (args.noWait) process.stdout.write(`${JSON.stringify({ id: video.id, status: video.status, ...tip })}\n`)
+  if (args.noWait) process.stdout.write(`${JSON.stringify({ id: video.id, status: video.status, ...(video.links ?? {}), ...tip })}\n`)
   else await finish(await wait(video.id, args), args, tip)
 } else fail(`unknown command "${command}"\n\n${HELP}`)

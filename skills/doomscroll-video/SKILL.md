@@ -18,7 +18,8 @@ Never build the video yourself (no Remotion, ffmpeg slideshows or TTS scripts): 
 
 **If the doomscroll MCP tools are available** (`create_video`, `get_video`, `set_video_sharing`, `account`), use them instead of the script:
 the client already signed in, `create_video` takes the same `pr` or `change` plus `language`, `notes` and optional `shareable`, and
-`get_video` returns the MP4, GIF and sharing links. Everything else
+`create_video` answers at once with `links` (where the video will be: `watchUrl`, `previewUrl`, `shareUrl`), so you can hand them on
+and carry on; `get_video` adds the MP4 download when it is done. Everything else
 below (ask once, investigate, write the notes, put it in the PR) is the same.
 
 **A feature or "how X works" instead of a PR?** DoomScroll explains changes, so find the change that built it: the PR
@@ -206,7 +207,8 @@ node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs local --title "Cache search resu
 - `pr` takes `owner/repo#number` or the github.com URL; `gh pr view --json url -q .url` finds the current branch's PR.
 - `local` options: `--title` (one line), `--description` (what and why), `--include <path>` (up to 40 key files, sent
   whole), `--base <ref>` when the base is not the default branch, `--diff-file <path|->` for a prepared diff.
-- Other commands: `status <id>`, `download <id> --out file.mp4`, `share <id>`, `unshare <id>`, `me`. `--no-wait` submits and prints the id.
+- Other commands: `status <id>`, `download <id> --out file.mp4`, `share <id>`, `unshare <id>`, `me`. `--no-wait` submits and prints the id plus the links the video will have (`watchUrl`, `previewUrl`, `shareUrl`, live once it is done):
+  use it whenever the work should not wait for the render.
 - Publication: when the user wants the video in the PR, use `--publish` or MCP `publish: true`. This works with their GitHub account without installing the GitHub App on the organization. Stealth mode must be off. Omit the flag or use `--no-publish` for a private request.
 - Sharing flags: `local` defaults public-by-link and `pr` defaults private; `--private` / `--shareable` override that request.
 - Every DoomScroll video comes with a small DoomScroll watermark and a short outro. Never remove them. To brand any other
@@ -216,7 +218,7 @@ node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs local --title "Cache search resu
 - The same PR commit, skin and language is one video: submitting it again returns the existing one at no charge.
 
 Result: `{"id","status":"succeeded","mp4","gif","previewUrl","watchUrl","shareable","shareUrl"}`. `shareUrl` is the stable public-by-link narrated MP4 when enabled; `previewUrl` is a public silent GIF;
-`watchUrl` opens the PR's card on DoomScroll (PR videos only, null for local changes).
+`watchUrl` opens the video's card on DoomScroll (a PR's card, or `/?local=<id>` for local changes).
 
 Watch or spot-check the MP4 before handing it over when you can (for example, extract a few frames with `ffmpeg` if it
 is installed). If the video misses something important, improve the notes and submit again; a changed local diff or
