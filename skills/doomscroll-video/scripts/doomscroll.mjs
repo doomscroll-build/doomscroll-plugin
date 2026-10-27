@@ -21,6 +21,7 @@ const HELP = `Usage:
   doomscroll.mjs share <id>                     Enable its stable public-by-link MP4 URL
   doomscroll.mjs unshare <id>                   Disable its public MP4 URL
   doomscroll.mjs me
+  doomscroll.mjs auto on|off|status          Automatic PR videos and video offers in Claude Code (the plugin's hooks; default on)
   doomscroll.mjs watermark <video> [--out <file.mp4>] [--jingle <audio> --jingle-start <s>] [--threads <n>]   Brand any video: DoomScroll mark at the bottom right + a short outro (needs ffmpeg)
 
 Options:
@@ -34,6 +35,9 @@ Options:
   --private                      Disable the public MP4 link (local defaults shared; PR defaults private)
   --out <file.mp4>                Where to save the video (default doomscroll-<id>.mp4)
   --gif <file.gif>                Also save the silent GIF preview
+  --auto                          PR only: you are making it on your own (after a push), not because the user asked; when the
+                                  DoomScroll GitHub App makes this PR's videos already, nothing is queued and its link is printed
+  --open                          Open the finished video in the browser (its DoomScroll page, else the share link, else the MP4)
   --no-wait                       Submit and print the id without waiting
   --timeout <minutes>             Give up waiting after this long (default 60)
 
@@ -66,6 +70,8 @@ function parseArgs(argv) {
     else if (arg === '--no-publish') args.noPublish = true
     else if (arg === '--shareable') args.shareable = true
     else if (arg === '--private') args.private = true
+    else if (arg === '--open') args.open = true
+    else if (arg === '--auto') args.auto = true
     else if (arg.startsWith('--')) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
       const value = argv[++i]
@@ -77,12 +83,19 @@ function parseArgs(argv) {
 }
 
 const origin = (process.env.DOOMSCROLL_URL || 'https://doomscroll.build').replace(/\/+$/, '')
-const CREDENTIALS = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'doomscroll', 'credentials.json')
+const CONFIG = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'doomscroll')
+const CREDENTIALS = join(CONFIG, 'credentials.json'), SETTINGS = join(CONFIG, 'settings.json')
 const saved = () => { try { return JSON.parse(readFileSync(CREDENTIALS, 'utf8'))[origin]?.apiKey } catch { return undefined } }
 const key = process.env.DOOMSCROLL_API_KEY || saved()
 const headers = () => {
   if (!key) fail('not signed in. Run: doomscroll.mjs login (or export DOOMSCROLL_API_KEY from DoomScroll Settings -> Agent access).', 3)
   return { Authorization: `Bearer ${key}`, Accept: 'application/json' }
+}
+
+/** Opens a URL or file with the system's default app; a headless machine just keeps the printed link. */
+function openInBrowser(target) {
+  const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open'
+  try { execFileSync(opener, [target], { stdio: 'ignore', timeout: 5000 }); return true } catch { return false }
 }
 
 /** Browser sign-in (device code): show a code, the user approves it on doomscroll, the key lands in a 0600 file, never on screen. */
@@ -91,8 +104,7 @@ async function login() {
   const start = await (await post('/api/agent/device')).json()
   if (!start.device_code) fail(`could not start sign-in: ${start.error || 'unexpected answer'}`)
   log(`Open ${start.verification_uri_complete}\nand approve the code ${start.user_code}`)
-  const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open'
-  try { execFileSync(opener, [start.verification_uri_complete], { stdio: 'ignore', timeout: 5000 }) } catch { /* headless: the printed link is enough */ }
+  openInBrowser(start.verification_uri_complete)
   const deadline = Date.now() + start.expires_in * 1000
   while (Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, (start.interval || 3) * 1000))
@@ -212,11 +224,12 @@ async function wait(id, args) {
   }
 }
 
-async function finish(video, args) {
+async function finish(video, args, extra = {}) {
   if (video.status === 'failed') { process.stdout.write(`${JSON.stringify({ id: video.id, status: 'failed', error: video.error })}\n`); process.exit(2) }
   const mp4 = await download(video.video.mp4Url, args.out || `doomscroll-${video.id}.mp4`)
   const gif = args.gif ? await download(video.video.gifUrl, args.gif) : undefined
-  process.stdout.write(`${JSON.stringify({ id: video.id, status: 'succeeded', mp4, ...(gif ? { gif } : {}), previewUrl: video.video.previewUrl, watchUrl: video.video.watchUrl, publish: video.publish, shareable: video.shareable, shareUrl: video.video.shareUrl })}\n`)
+  const opened = args.open ? openInBrowser(video.video.watchUrl || video.video.shareUrl || resolve(mp4)) : undefined
+  process.stdout.write(`${JSON.stringify({ id: video.id, status: 'succeeded', mp4, ...(gif ? { gif } : {}), previewUrl: video.video.previewUrl, watchUrl: video.video.watchUrl, publish: video.publish, shareable: video.shareable, shareUrl: video.video.shareUrl, ...(args.open ? { opened } : {}), ...extra })}\n`)
 }
 
 const args = parseArgs(process.argv.slice(2))
@@ -228,6 +241,7 @@ const LANGUAGES = ['en', 'ar', 'es', 'fr', 'de', 'pt', 'tr', 'hi', 'id', 'ja', '
 if (args.language && !LANGUAGES.includes(args.language)) fail(`--language must be one of ${LANGUAGES.join(' ')}`)
 if (args.publish && args.noPublish) fail('choose --publish or --no-publish, not both')
 if (args.publish && command === 'local') fail('--publish is only available for pull requests')
+if (args.auto && command !== 'pr') fail('--auto is only available for pull requests')
 if (args.shareable && args.private) fail('choose --shareable or --private, not both')
 /** Every DoomScroll video carries this tag once branded, so branding twice is a no-op. */
 const BRAND_TAG = 'Made with DoomScroll'
@@ -305,6 +319,16 @@ else if (command === 'logout') { try { const all = JSON.parse(readFileSync(CREDE
 else if (command === 'speak') await speak(target, args)
 else if (command === 'transcribe') await transcribe(target, args)
 else if (command === 'watermark') process.stdout.write(`${JSON.stringify({ watermarked: watermark(target, args.out, args.jingle ?? process.env.DOOMSCROLL_JINGLE, args.jingleStart ?? process.env.DOOMSCROLL_JINGLE_START, args.threads ?? (process.env.FFMPEG_THREADS || undefined)) })}\n`)
+else if (command === 'auto') {
+  let settings = {}
+  try { settings = JSON.parse(readFileSync(SETTINGS, 'utf8')) } catch { /* defaults */ }
+  if (target === 'on' || target === 'off') {
+    settings.auto = target === 'on'
+    mkdirSync(CONFIG, { recursive: true, mode: 0o700 })
+    writeFileSync(SETTINGS, JSON.stringify(settings, null, 2))
+  } else if (target && target !== 'status') fail('auto takes on, off or status')
+  process.stdout.write(`${JSON.stringify({ auto: settings.auto !== false && process.env.DOOMSCROLL_AUTO !== '0' })}\n`)
+}
 else if (command === 'me') process.stdout.write(`${JSON.stringify(await call('/api/agent/me'))}\n`)
 else if (command === 'status') { if (!target) fail('status needs an id'); process.stdout.write(`${JSON.stringify((await call(`/api/agent/videos/${encodeURIComponent(target)}`)).video)}\n`) }
 else if (command === 'share' || command === 'unshare') {
@@ -321,9 +345,17 @@ else if (command === 'download') {
   const notes = readNotes(args.notes), screens = readScreens(args.screen)
   const sharing = args.shareable ? { shareable: true } : args.private ? { shareable: false } : {}
   const extras = { theme, ...(args.language ? { language: args.language } : {}), ...(notes ? { notes } : {}), ...(screens.length ? { screens } : {}), ...sharing }
-  const body = command === 'pr' ? { pr: parsePr(target), ...extras, ...(args.publish ? { publish: true } : args.noPublish ? { publish: false } : {}) } : { change: localChange(args), ...extras }
-  const { video, credits } = await call('/api/agent/videos', body)
+  const body = command === 'pr' ? { pr: parsePr(target), ...extras, ...(args.publish ? { publish: true } : args.noPublish ? { publish: false } : {}), ...(args.auto ? { auto: true } : {}) } : { change: localChange(args), ...extras }
+  const { video, credits, automatic, watchUrl, connectUrl } = await call('/api/agent/videos', body)
+  if (!video) {
+    // The DoomScroll GitHub App makes this PR's videos by itself: nothing was queued or charged.
+    log('the DoomScroll GitHub App makes this PR\'s video automatically; nothing was queued')
+    if (args.open) openInBrowser(watchUrl)
+    process.stdout.write(`${JSON.stringify({ status: 'automatic', watchUrl })}\n`)
+    process.exit(0)
+  }
   log(`queued ${video.id} (${credits.unlimited ? 'unlimited' : `${credits.remaining} credits left`})`)
-  if (args.noWait) process.stdout.write(`${JSON.stringify({ id: video.id, status: video.status })}\n`)
-  else await finish(await wait(video.id, args), args)
+  const tip = automatic === false ? { tip: `Connect GitHub at ${connectUrl} and every new PR gets its video automatically.` } : {}
+  if (args.noWait) process.stdout.write(`${JSON.stringify({ id: video.id, status: video.status, ...tip })}\n`)
+  else await finish(await wait(video.id, args), args, tip)
 } else fail(`unknown command "${command}"\n\n${HELP}`)

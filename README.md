@@ -21,6 +21,17 @@ As a plugin instead (Claude Code, Cursor and the other agents `npx plugins targe
 one-page sign-in): `npx --yes plugins add doomscroll-build/doomscroll-plugin -y`, or in Claude Code
 `/plugin marketplace add doomscroll-build/doomscroll-plugin` then `/plugin install doomscroll@doomscroll`.
 
+### Automatic videos (the Claude Code plugin)
+
+The plugin adds three small hooks. They only add a line of context for your agent: they call nothing and send nothing themselves.
+
+- **After `gh pr create` or a `git push` to a branch with an open PR**, your agent makes that PR's video in the background (private, one credit, never twice for the same commit) and gives you the link when it is ready. If the DoomScroll GitHub App already makes your PR videos, the agent just hands you that video's link and nothing is charged.
+- **After a long explanation**, it asks "Would you like to see this explanation as an animated video?"
+- **When you hand over a batch of tasks or overnight work**, it asks once whether to add the results to your DoomScroll feed as videos.
+
+When you ask for a video yourself, it opens in your browser, and the agent also prints the link and the MP4's path. Turn the automatic part off with
+`node <skill>/scripts/doomscroll.mjs auto off` (or `DOOMSCROLL_AUTO=0`); `auto on` brings it back. The skill alone (`npx skills add`) has no hooks.
+
 ### Or connect the MCP server
 
 Optional and separate from the skill, for clients without a terminal. One URL, `https://doomscroll.build/mcp`; your client opens a browser to sign in with GitHub (OAuth, no key to paste).
@@ -57,11 +68,11 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 
 | Request | What it does |
 | --- | --- |
-| `POST /api/agent/videos` `{"pr": {"owner", "repo", "number", "sha"?}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?, "publish"?}` | Video of a GitHub PR (default: its head commit; sharing defaults off) |
+| `POST /api/agent/videos` `{"pr": {"owner", "repo", "number", "sha"?}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?, "publish"?, "auto"?}` | Video of a GitHub PR (default: its head commit; sharing defaults off). One video per PR commit: a published one (e.g. the DoomScroll bot's) or your own is returned instead of a new one, at no charge. `auto: true` (you are making it unasked) answers `200 {"video": null, "automatic": true, "watchUrl"}` when the GitHub App will make it. `automatic: false` plus `connectUrl` means GitHub is not connected for automatic videos |
 | `POST /api/agent/videos` `{"change": {"title", "description"?, "diff", "repo"?, "files"?: [{"path", "content"}]}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?}` | Video of a unified diff (sharing defaults on; ≤ 600 KB, ≤ 300 files, ≤ 40 excerpts of ≤ 100 KB) |
 | `GET /api/agent/videos/<id>` | Status/progress, `publish`, `shareable`, and when ready authenticated downloads plus `video.shareUrl` when sharing is on |
 | `POST /api/agent/videos/<id>/sharing` `{"shareable": true|false}` | Enable or revoke its stable unguessable public MP4 link |
-| `GET /api/agent/me` | The key's GitHub login and credits |
+| `GET /api/agent/me` | The key's GitHub login, credits and `connection` (`automatic`: the GitHub App makes your PR videos by itself; `installations`, `finished`, `failed`, `connectUrl`) |
 | `POST /api/agent/v1/audio/speech`, `POST /api/agent/v1/audio/transcriptions` | OpenAI-compatible voice, metered in credits |
 | `POST /api/agent/device`, `POST /api/agent/device/token` | Browser sign-in by device code |
 | `POST /mcp` | The MCP server (Streamable HTTP; OAuth 2.1 with dynamic client registration and PKCE, or the key) |
@@ -69,7 +80,7 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 `doomscroll.mjs watermark <video>` adds the same watermark, outro and jingle to any video with your local ffmpeg (logo in
 `skills/doomscroll-video/assets/`).
 
-`publish`: PR-only explicit opt-in, default `false`. Repeating a completed private request with publication enabled reuses its saved video without another render or credit. This does not enable public MP4 sharing. Installing the MCP server does not automatically submit every PR.
+`publish`: PR-only explicit opt-in, default `false`. Repeating a completed private request with publication enabled reuses its saved video without another render or credit. This does not enable public MP4 sharing. Installing the MCP server or the skill alone does not submit PRs; only the Claude Code plugin's hooks do, and `auto off` stops them.
 
 `shareable`: local changes default `true`; PR videos default `false`. The stable `video.shareUrl` contains a random 128-bit locator. Change it later with `doomscroll.mjs share <id>` / `unshare <id>` or `set_video_sharing`. `screens`: up to 4 `{caption, image}` screenshots of the UI the change touches (image = a base64 data URL, PNG/JPEG/WebP ≤ 1.5 MB); the video cuts to each one. `theme`: `classic` (default), `football` or `kpop`. `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
 your DoomScroll setting). `notes`: `summary`, `why`, `howItWorks`, `architecture`, `risks`, `audience` (text), `flows`

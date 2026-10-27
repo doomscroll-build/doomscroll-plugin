@@ -1,0 +1,14 @@
+{
+  "description": "DoomScroll: a video for every pull request you open or push, and an offer to turn explanations into videos",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" session", "timeout": 5 }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" prompt", "timeout": 5 }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" bash", "timeout": 5 }] }
+    ]
+  }
+}
