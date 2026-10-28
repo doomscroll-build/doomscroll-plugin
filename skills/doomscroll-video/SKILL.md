@@ -153,6 +153,10 @@ a CLI's output). A video of a UI change that only shows boxes and arrows has fai
   running locally), or only the "after" for something new. Use the project's own dev server and a headless browser
   (Playwright: `npx playwright screenshot --viewport-size=1280,800 <url> after.png`, or `--device="iPhone 13"` for a phone
   view), an existing screenshot in the PR description, or a terminal capture. Crop to the part that changed.
+- For a PR, the "after" is often its preview deployment: `gh api "repos/<owner>/<repo>/deployments?sha=<head sha>"`, then
+  that deployment's `statuses` → `environment_url`, or the preview link a bot commented. You already have access the
+  DoomScroll server does not: use your own signed-in browser, and when a sign-in page blocks you, a sign-in helper skill
+  if you have one. Screenshots on a `--auto` request make DoomScroll replace the GitHub App's screenless video.
 - Caption each one with what to look at: `"Before: no way to hand setup to an agent"`, `"After: the Onboard your agent pill
   next to the sign-in button"`.
 - Send them with `--screen after.png="After: …"` (repeat, up to 4; PNG, JPEG or WebP under 1.5 MB, larger ones are

@@ -291,6 +291,16 @@ function watermark(input, output, jingle, jingleStart, threads) {
   return out
 }
 
+/** The tmux pane this agent runs in, so a comment on its local video can reach this session; nothing outside tmux. */
+function sessionSource() {
+  const pane = process.env.TMUX_PANE
+  if (!process.env.TMUX || !/^%\d+$/.test(pane ?? '')) return {}
+  try {
+    const [tmuxSession, cwd] = execFileSync('tmux', ['display-message', '-p', '-t', pane, '#S\t#{pane_current_path}'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim().split('\t')
+    return tmuxSession && cwd ? { source: { tmuxSession, tmuxPane: pane, cwd } } : {}
+  } catch { return {} }
+}
+
 /** `--screen <image>=<caption>` files as data URLs; one over 1.5 MB is shrunk to a 1080 px wide JPEG with ffmpeg when it is installed. */
 function readScreens(values) {
   if (values.length > 4) fail('at most 4 --screen images')
@@ -345,7 +355,7 @@ else if (command === 'download') {
   const notes = readNotes(args.notes), screens = readScreens(args.screen)
   const sharing = args.shareable ? { shareable: true } : args.private ? { shareable: false } : {}
   const extras = { theme, ...(args.language ? { language: args.language } : {}), ...(notes ? { notes } : {}), ...(screens.length ? { screens } : {}), ...sharing }
-  const body = command === 'pr' ? { pr: parsePr(target), ...extras, ...(args.publish ? { publish: true } : args.noPublish ? { publish: false } : {}), ...(args.auto ? { auto: true } : {}) } : { change: localChange(args), ...extras }
+  const body = command === 'pr' ? { pr: parsePr(target), ...extras, ...(args.publish ? { publish: true } : args.noPublish ? { publish: false } : {}), ...(args.auto ? { auto: true } : {}) } : { change: localChange(args), ...extras, ...sessionSource() }
   const { video, credits, automatic, watchUrl, connectUrl } = await call('/api/agent/videos', body)
   if (!video) {
     // The DoomScroll GitHub App makes this PR's videos by itself: nothing was queued or charged.
