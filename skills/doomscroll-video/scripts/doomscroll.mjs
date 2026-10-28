@@ -36,6 +36,8 @@ Options:
   --private                      Disable the public MP4 link (local defaults shared; PR defaults private)
   --out <file.mp4>                Where to save the video (default doomscroll-<id>.mp4)
   --gif <file.gif>                Also save the silent GIF preview
+  --comment                       PR only: post one PR comment with your own gh right after submitting: the preview GIF (a
+                                  "cooking" animation until the video is ready) linking to DoomScroll; a re-run edits it
   --auto                          PR only: you are making it on your own (after a push), not because the user asked; when the
                                   DoomScroll GitHub App makes this PR's videos already, nothing is queued and its link is printed
   --open                          Open the finished video in the browser (its DoomScroll page, else the share link, else the MP4)
@@ -73,6 +75,7 @@ function parseArgs(argv) {
     else if (arg === '--private') args.private = true
     else if (arg === '--open') args.open = true
     else if (arg === '--auto') args.auto = true
+    else if (arg === '--comment') args.comment = true
     else if (arg.startsWith('--')) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
       const value = argv[++i]
@@ -243,6 +246,7 @@ if (args.language && !LANGUAGES.includes(args.language)) fail(`--language must b
 if (args.publish && args.noPublish) fail('choose --publish or --no-publish, not both')
 if (args.publish && command === 'local') fail('--publish is only available for pull requests')
 if (args.auto && command !== 'pr') fail('--auto is only available for pull requests')
+if (args.comment && command !== 'pr') fail('--comment is only available for pull requests')
 if (args.shareable && args.private) fail('choose --shareable or --private, not both')
 /** Every DoomScroll video carries this tag once branded, so branding twice is a no-op. */
 const BRAND_TAG = 'Made with DoomScroll'
@@ -320,6 +324,30 @@ function readScreens(values) {
   })
 }
 
+const COMMENT_MARKER = '<!-- doomscroll-agent-video -->'
+/**
+ * `--comment`: one PR comment from the user's own gh, like the bot's. Its GIF URL serves a "cooking" animation while the video
+ * renders and the video's preview once it is ready, so it is posted at once. A re-run edits the user's earlier one (its marker).
+ */
+function commentOnPr({ owner, repo, number }, video) {
+  if (video.publish) return { comment: 'skipped', commentReason: 'DoomScroll posts this video on the PR itself' }
+  const { watchUrl, previewUrl } = video.links ?? {}
+  if (!previewUrl) return { comment: 'skipped', commentReason: 'no preview link' }
+  const site = new URL(origin)
+  const body = `${COMMENT_MARKER}\n### 🎬 DoomScroll video of this PR\n\n[![DoomScroll video: it plays here when it is ready](${previewUrl})](${watchUrl})\n\n**[▶ Watch on DoomScroll](${watchUrl})**, a short narrated walkthrough of this pull request.\n\n<sub>🎬 10x your reviews! Watch your PRs as videos with [${site.host.replace(/^doomscroll/i, 'DoomScroll')}](${site.origin}/)</sub>\n`
+  const gh = (ghArgs, input) => execFileSync('gh', ghArgs, { input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+  try {
+    const me = gh(['api', 'user', '--jq', '.login'])
+    const mine = gh(['api', '--paginate', `repos/${owner}/${repo}/issues/${number}/comments`, '--jq', `.[] | select(.user.login == "${me}" and (.body | contains("${COMMENT_MARKER}"))) | .id`]).split('\n').filter(Boolean)
+    if (mine.length) return { comment: gh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/issues/comments/${mine.at(-1)}`, '--input', '-', '--jq', '.html_url'], JSON.stringify({ body })), commentEdited: true }
+    return { comment: gh(['pr', 'comment', `https://github.com/${owner}/${repo}/pull/${number}`, '--body-file', '-'], body).split('\n').at(-1) }
+  } catch (error) {
+    const reason = error.code === 'ENOENT' ? 'gh not found' : String(error.stderr || error.message).trim().split('\n').at(-1)
+    log(`could not comment on the PR: ${reason}`)
+    return { comment: 'failed', commentReason: reason }
+  }
+}
+
 function readNotes(path) {
   if (!path) return undefined
   try { return JSON.parse(readFileSync(path === '-' ? 0 : path, 'utf8')) } catch (error) { fail(`--notes must be a JSON file: ${error.message}`) }
@@ -375,7 +403,7 @@ else if (command === 'download') {
   log(`queued ${video.id} (${credits.unlimited ? 'unlimited' : `${credits.remaining} credits left`})`)
   // Where the video will be, known now: the links go live when it is done, so a caller can hand them on without waiting.
   if (video.links?.watchUrl) log(`it will be at ${video.links.watchUrl}`)
-  const tip = automatic === false ? { tip: `Connect GitHub at ${connectUrl} and every new PR gets its video automatically.` } : {}
+  const tip = { ...(automatic === false ? { tip: `Connect GitHub at ${connectUrl} and every new PR gets its video automatically.` } : {}), ...(args.comment ? commentOnPr(body.pr, video) : {}) }
   if (args.noWait) process.stdout.write(`${JSON.stringify({ id: video.id, status: video.status, ...(video.links ?? {}), ...tip })}\n`)
   else await finish(await wait(video.id, args), args, tip)
 } else fail(`unknown command "${command}"\n\n${HELP}`)

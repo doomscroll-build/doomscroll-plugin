@@ -25,7 +25,7 @@ one-page sign-in): `npx --yes plugins add doomscroll-build/doomscroll-plugin -y`
 
 The plugin adds three small hooks. They only add a line of context for your agent: they call nothing and send nothing themselves.
 
-- **After `gh pr create` or a `git push` to a branch with an open PR**, your agent makes that PR's video in the background (private, one credit, never twice for the same commit) and gives you the link when it is ready. If the DoomScroll GitHub App already makes your PR videos, the agent just hands you that video's link and nothing is charged.
+- **After `gh pr create` or a `git push` to a branch with an open PR**, your agent makes that PR's video in the background with `scripts/pr-video.sh` (one credit, never twice for the same commit), posts one PR comment from your own `gh` whose GIF shows "cooking" until the video is ready, and gives you the link. If the DoomScroll GitHub App already makes your PR videos, the agent just hands you that video's link and nothing is charged.
 - **After a long explanation**, it asks "Would you like to see this explanation as an animated video?"
 - **When you hand over a batch of tasks or overnight work**, it asks once whether to add the results to your DoomScroll feed as videos.
 
@@ -51,8 +51,11 @@ Send `Authorization: Bearer <key>` with a key from Settings → Agent access.
 ## What happens
 
 1. Your agent reads the change and the code around it, and writes notes: every component, how they connect, what
-   changed and what could break.
-2. DoomScroll turns the PR or diff plus the notes into a 30–90 second video, in any of 12 languages.
+   changed and what could break. For a change you can see, it walks through the real UI and captures before/after
+   screenshots (a screen recording becomes up to 4 key frames).
+2. DoomScroll turns the PR or diff plus the notes and screenshots into a 1–2 minute portrait video, in any of 12 languages:
+   one animated diagram of the real components, in four chapters (Currently → The change → After → Blast radius), cutting
+   to your screenshots, ending on what merging means.
 3. Your agent downloads the MP4, or explicitly requests PR publication with `publish: true` / `--publish`. DoomScroll posts
    status, its hosted preview/link and failure guidance using your GitHub account. No organization App installation is needed.
    Default requests remain private. Stealth mode must be off and repository write access is required. Videos are never uploaded to GitHub.
@@ -77,6 +80,11 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 | `POST /api/agent/v1/audio/speech`, `POST /api/agent/v1/audio/transcriptions` | OpenAI-compatible voice, metered in credits |
 | `POST /api/agent/device`, `POST /api/agent/device/token` | Browser sign-in by device code |
 | `POST /mcp` | The MCP server (Streamable HTTP; OAuth 2.1 with dynamic client registration and PKCE, or the key) |
+
+`doomscroll.mjs pr <PR> --comment` posts one PR comment with your own `gh` right after submitting: the `previewUrl` GIF (a
+"cooking" animation until the video is ready, then its preview) linking to `watchUrl`; a re-run edits it, and it is skipped
+when DoomScroll posts on the PR itself. `scripts/pr-video.sh [--pr <url>] [options]` runs that for the current branch's PR
+with `--no-wait` and prints the watch link.
 
 `doomscroll.mjs watermark <video>` adds the same watermark, outro and jingle to any video with your local ffmpeg (logo in
 `skills/doomscroll-video/assets/`).
