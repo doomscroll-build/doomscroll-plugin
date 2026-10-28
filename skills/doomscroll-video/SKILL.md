@@ -249,8 +249,9 @@ node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs local --title "Cache search resu
 - **When the user asked for the video, add `--open`**: it opens in their browser (the DoomScroll page for a PR, else the share
   link, else the MP4). Still print the `watchUrl`/`shareUrl` and the MP4 path in your reply.
 - `pr` takes `owner/repo#number` or the github.com URL; `gh pr view --json url -q .url` finds the current branch's PR.
-  `bash ${CLAUDE_SKILL_DIR}/scripts/pr-video.sh [--pr <url>] [options]` does that lookup and runs `pr <url> --comment --no-wait
-  [options]` in one step: the default for a PR.
+  `bash ${CLAUDE_SKILL_DIR}/scripts/pr-video.sh [--pr <url>] [options]` does that lookup and runs `pr <url> --publish --or-shareable --comment
+  --no-wait [options]` in one step: the default for a PR. It publishes on the PR when the user can write to the repo and
+  Stealth is off; otherwise the video is made shareable and the comment links its MP4, so reviewers can always play it.
 - `local` options: `--title` (one line), `--description` (what and why), `--include <path>` (up to 40 key files, sent
   whole), `--base <ref>` when the base is not the default branch, `--diff-file <path|->` for a prepared diff.
 - Other commands: `status <id>`, `download <id> --out file.mp4`, `share <id>`, `unshare <id>`, `me`. `--no-wait` submits and prints the id plus the links the video will have (`watchUrl`, `previewUrl`, `shareUrl`, live once it is done):
@@ -276,7 +277,7 @@ Do not substitute a locally assembled FFmpeg slideshow for the hosted narrated p
 
 **The PR comment (`--comment`, what `pr-video.sh` does)**: right after submitting, the client posts ONE comment on the PR with
 the user's own `gh`, like the DoomScroll bot's: a heading, the video's GIF linking to its DoomScroll page, a "▶ Watch on
-DoomScroll" link and a one-line footer. The GIF URL shows a "cooking" animation while the video renders and the video's
+DoomScroll" link (plus "Play the MP4" when the video is shareable) and a one-line footer. The GIF URL shows a "cooking" animation while the video renders and the video's
 preview once it is ready, so the comment never needs a second edit; a re-run for the same PR edits that comment instead of
 adding one. It is skipped when DoomScroll posts on the PR itself (a published video, or `--auto` with the GitHub App). Use it
 for every PR video unless the user asked to keep it off the PR; never hand-write a `gh pr comment` for a video instead.

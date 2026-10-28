@@ -36,6 +36,7 @@ Options:
   --private                      Disable the public MP4 link (local defaults shared; PR defaults private)
   --out <file.mp4>                Where to save the video (default doomscroll-<id>.mp4)
   --gif <file.gif>                Also save the silent GIF preview
+  --or-shareable                  With --publish: when DoomScroll cannot publish (no write access, Stealth on), make it shareable instead
   --comment                       PR only: post one PR comment with your own gh right after submitting: the preview GIF (a
                                   "cooking" animation until the video is ready) linking to DoomScroll; a re-run edits it
   --auto                          PR only: you are making it on your own (after a push), not because the user asked; when the
@@ -76,6 +77,7 @@ function parseArgs(argv) {
     else if (arg === '--open') args.open = true
     else if (arg === '--auto') args.auto = true
     else if (arg === '--comment') args.comment = true
+    else if (arg === '--or-shareable') args.orShareable = true
     else if (arg.startsWith('--')) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
       const value = argv[++i]
@@ -154,12 +156,16 @@ async function transcribe(file, args) {
   if (args.out) { writeFileSync(args.out, text); process.stdout.write(`${JSON.stringify({ file: args.out })}\n`) } else process.stdout.write(`${text}\n`)
 }
 
-async function call(path, body) {
+async function request(path, body) {
   let response
   try {
     response = await fetch(origin + path, { method: body ? 'POST' : 'GET', headers: { ...headers(), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, redirect: 'error' })
   } catch (error) { fail(`could not reach ${origin}: ${error.message}`) }
-  const data = await response.json().catch(() => ({}))
+  return { response, data: await response.json().catch(() => ({})) }
+}
+
+async function call(path, body) {
+  const { response, data } = await request(path, body)
   if (!response.ok) fail(`${response.status} ${data.error || response.statusText}`, response.status === 401 ? 3 : response.status === 402 ? 4 : 1)
   return data
 }
@@ -248,6 +254,7 @@ if (args.publish && command === 'local') fail('--publish is only available for p
 if (args.auto && command !== 'pr') fail('--auto is only available for pull requests')
 if (args.comment && command !== 'pr') fail('--comment is only available for pull requests')
 if (args.shareable && args.private) fail('choose --shareable or --private, not both')
+if (args.orShareable && !args.publish) fail('--or-shareable goes with --publish')
 /** Every DoomScroll video carries this tag once branded, so branding twice is a no-op. */
 const BRAND_TAG = 'Made with DoomScroll'
 const OUTRO_SECONDS = 1.6
@@ -331,10 +338,10 @@ const COMMENT_MARKER = '<!-- doomscroll-agent-video -->'
  */
 function commentOnPr({ owner, repo, number }, video) {
   if (video.publish) return { comment: 'skipped', commentReason: 'DoomScroll posts this video on the PR itself' }
-  const { watchUrl, previewUrl } = video.links ?? {}
+  const { watchUrl, previewUrl, shareUrl } = video.links ?? {}
   if (!previewUrl) return { comment: 'skipped', commentReason: 'no preview link' }
   const site = new URL(origin)
-  const body = `${COMMENT_MARKER}\n### 🎬 DoomScroll video of this PR\n\n[![DoomScroll video: it plays here when it is ready](${previewUrl})](${watchUrl})\n\n**[▶ Watch on DoomScroll](${watchUrl})**, a short narrated walkthrough of this pull request.\n\n<sub>🎬 10x your reviews! Watch your PRs as videos with [${site.host.replace(/^doomscroll/i, 'DoomScroll')}](${site.origin}/)</sub>\n`
+  const body = `${COMMENT_MARKER}\n### 🎬 DoomScroll video of this PR\n\n[![DoomScroll video: it plays here when it is ready](${previewUrl})](${watchUrl})\n\n**[▶ Watch on DoomScroll](${watchUrl})**${shareUrl ? ` · [Play the MP4](${shareUrl})` : ''}, a short narrated walkthrough of this pull request.\n\n<sub>🎬 10x your reviews! Watch your PRs as videos with [${site.host.replace(/^doomscroll/i, 'DoomScroll')}](${site.origin}/)</sub>\n`
   const gh = (ghArgs, input) => execFileSync('gh', ghArgs, { input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
   try {
     const me = gh(['api', 'user', '--jq', '.login'])
@@ -392,7 +399,17 @@ else if (command === 'download') {
   const sharing = args.shareable ? { shareable: true } : args.private ? { shareable: false } : {}
   const extras = { theme, ...(args.language ? { language: args.language } : {}), ...(notes ? { notes } : {}), ...(screens.length ? { screens } : {}), ...sharing }
   const body = command === 'pr' ? { pr: parsePr(target), ...extras, ...(args.publish ? { publish: true } : args.noPublish ? { publish: false } : {}), ...(args.auto ? { auto: true } : {}) } : { change: localChange(args), ...extras, ...sessionSource() }
-  const { video, credits, automatic, watchUrl, connectUrl } = await call('/api/agent/videos', body)
+  let answer = args.orShareable && body.publish ? await request('/api/agent/videos', body) : undefined
+  // --publish --or-shareable: publishing needs write access and Stealth off; when DoomScroll refuses, the video is made
+  // shareable instead, so reviewers can still play it from the PR comment.
+  if (answer && [403, 409, 503].includes(answer.response.status)) {
+    log(`not published (${answer.data.error || answer.response.status}); making it shareable instead`)
+    delete body.publish
+    body.shareable = true
+    answer = undefined
+  }
+  if (answer && !answer.response.ok) fail(`${answer.response.status} ${answer.data.error || answer.response.statusText}`, answer.response.status === 401 ? 3 : answer.response.status === 402 ? 4 : 1)
+  const { video, credits, automatic, watchUrl, connectUrl } = answer?.data ?? await call('/api/agent/videos', body)
   if (!video) {
     // The DoomScroll GitHub App makes this PR's videos by itself: nothing was queued or charged.
     log('the DoomScroll GitHub App makes this PR\'s video automatically; nothing was queued')

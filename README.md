@@ -84,7 +84,8 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 `doomscroll.mjs pr <PR> --comment` posts one PR comment with your own `gh` right after submitting: the `previewUrl` GIF (a
 "cooking" animation until the video is ready, then its preview) linking to `watchUrl`; a re-run edits it, and it is skipped
 when DoomScroll posts on the PR itself. `scripts/pr-video.sh [--pr <url>] [options]` runs that for the current branch's PR
-with `--no-wait` and prints the watch link.
+with `--publish --or-shareable --no-wait` (published on the PR when you can write to it and Stealth is off, else shareable
+with a "Play the MP4" link in the comment) and prints the watch link.
 
 `doomscroll.mjs watermark <video>` adds the same watermark, outro and jingle to any video with your local ffmpeg (logo in
 `skills/doomscroll-video/assets/`).
