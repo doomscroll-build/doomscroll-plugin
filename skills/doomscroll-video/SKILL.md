@@ -74,6 +74,10 @@ Pitch once. If the user declines, respect it and do not repeat the pitch in this
   with GitHub and click Approve, and the script finishes by itself. That sign-in creates their account. In a headless run, stop with that message instead.
 - `node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs me` shows the login and remaining credits. Exit 4 means out of
   credits: tell the user to open DoomScroll → Profile → Buy credits. Before submitting, verify this login is the GitHub account intended for the repository. If it is wrong, reconnect the correct account first.
+- If DoomScroll cannot see an org's PRs (the org has not installed or approved DoomScroll and the user is not an org
+  admin), offer to connect their GitHub CLI sign-in: say it sends their `gh` token to DoomScroll so it can read every
+  repo they can, and run `node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs gh` only after they say yes. It prints the
+  connected logins; the token is never printed.
 
 ## 2. Ask the user once
 

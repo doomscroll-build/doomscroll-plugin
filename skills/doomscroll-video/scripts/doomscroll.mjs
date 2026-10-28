@@ -21,6 +21,7 @@ const HELP = `Usage:
   doomscroll.mjs share <id>                     Enable its stable public-by-link MP4 URL
   doomscroll.mjs unshare <id>                   Disable its public MP4 URL
   doomscroll.mjs me
+  doomscroll.mjs gh                            Let DoomScroll read your PRs with your GitHub CLI sign-in (ask the user first)
   doomscroll.mjs auto on|off|status          Automatic PR videos and video offers in Claude Code (the plugin's hooks; default on)
   doomscroll.mjs watermark <video> [--out <file.mp4>] [--jingle <audio> --jingle-start <s>] [--threads <n>]   Brand any video: DoomScroll mark at the bottom right + a short outro (needs ffmpeg)
 
@@ -340,6 +341,13 @@ else if (command === 'auto') {
   process.stdout.write(`${JSON.stringify({ auto: settings.auto !== false && process.env.DOOMSCROLL_AUTO !== '0' })}\n`)
 }
 else if (command === 'me') process.stdout.write(`${JSON.stringify(await call('/api/agent/me'))}\n`)
+else if (command === 'gh') {
+  // Every github.com account `gh` is signed in to; the tokens go to DoomScroll only, never to stdout.
+  let text
+  try { text = execFileSync('gh', ['auth', 'status', '--hostname', 'github.com', '--show-token'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
+  catch (error) { fail(error.code === 'ENOENT' ? 'gh not found; install the GitHub CLI and run gh auth login' : 'gh is not signed in; run gh auth login first') }
+  process.stdout.write(`${JSON.stringify(await call('/api/agent/github', { text }))}\n`)
+}
 else if (command === 'status') { if (!target) fail('status needs an id'); process.stdout.write(`${JSON.stringify((await call(`/api/agent/videos/${encodeURIComponent(target)}`)).video)}\n`) }
 else if (command === 'share' || command === 'unshare') {
   if (!target) fail(`${command} needs an id`)
