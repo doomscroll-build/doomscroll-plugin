@@ -71,10 +71,11 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 
 | Request | What it does |
 | --- | --- |
-| `POST /api/agent/videos` `{"pr": {"owner", "repo", "number", "sha"?}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?, "publish"?, "auto"?}` | Video of a GitHub PR (default: its head commit; sharing defaults off). One video per PR commit: a published one (e.g. the DoomScroll bot's) or your own is returned instead of a new one, at no charge. `auto: true` (you are making it unasked) answers `200 {"video": null, "automatic": true, "watchUrl"}` when the GitHub App will make it. With `screens` it makes and publishes the video itself instead, replacing the App's screenless one of that commit. `automatic: false` plus `connectUrl` means GitHub is not connected for automatic videos |
+| `POST /api/agent/videos` `{"pr": {"owner", "repo", "number", "sha"?}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?, "publish"?, "auto"?, "source"?: {"tmuxSession", "tmuxPane", "cwd"}}` | Video of a GitHub PR (default: its head commit; sharing defaults off). One video per PR commit: a published one (e.g. the DoomScroll bot's) or your own is returned instead of a new one, at no charge. `auto: true` (you are making it unasked) answers `200 {"video": null, "automatic": true, "watchUrl"}` when the GitHub App will make it. With `screens` it makes and publishes the video itself instead, replacing the App's screenless one of that commit. `automatic: false` plus `connectUrl` means GitHub is not connected for automatic videos |
 | `POST /api/agent/videos` `{"change": {"title", "description"?, "diff", "repo"?, "files"?: [{"path", "content"}]}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?, "source"?: {"tmuxSession", "tmuxPane", "cwd"}}` | Video of a unified diff (sharing defaults on; ≤ 600 KB, ≤ 300 files, ≤ 40 excerpts of ≤ 100 KB). `source` (sent by the client inside tmux) is where comments on the video can be delivered |
 | `GET /api/agent/videos/<id>` | Status/progress, `publish`, `shareable`, `links`, and when ready authenticated downloads |
 | `POST /api/agent/videos/<id>/sharing` `{"shareable": true|false}` | Enable or revoke its stable unguessable public MP4 link |
+| `GET /api/agent/events?since=<id>&limit=<n>` | What changed for this key's login after event `since` (exclusive; default 0, ≤ 500 per page), oldest first, as `{events: [{id, type, source, subject, time, task, media, data}]}`: `task.queued` / `task.stage` / `task.failed` / `task.succeeded` (`media` = the finished video's token) and `submission.created` (`data.duplicate`). Events are kept 30 days; `410 {resync: true}` means `since` is older than what is kept, so re-read your videos and continue from the newest id |
 | `GET /api/agent/me` | The key's GitHub login, credits and `connection` (`automatic`: the GitHub App makes your PR videos by itself; `installations`, `finished`, `failed`, `connectUrl`) |
 | `POST /api/agent/github` `{"text"}` | The user's GitHub CLI tokens (`gh auth status --show-token` output, sent by `doomscroll.mjs gh` after the user agrees), so DoomScroll reads orgs where the App is not installed; answers `{connected, skipped}` |
 | `POST /api/agent/v1/audio/speech`, `POST /api/agent/v1/audio/transcriptions` | OpenAI-compatible voice, metered in credits |
@@ -101,3 +102,68 @@ your DoomScroll setting). `notes`: `summary`, `why`, `howItWorks`, `architecture
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+
+## Stored review items
+
+Allow-listed accounts can post video, audio, image, HTML bundles, text, and URL cards without rendering them.
+The JSON file is the `POST /api/agent/items` body. Its `manifest` maps relative file paths to
+SHA-256 hashes; files live relative to that JSON file. `panelBlobs` uses the same format.
+The client uploads missing bytes in resumable parts, verifies local hashes, then submits.
+One file uses its SHA as the revision; a bundle uses the SHA of its sorted manifest JSON.
+Panels and tags are annotations, not reviewed bytes. `postedAt` preserves source chronology.
+
+```sh
+node doomscroll.mjs item post manifest.json
+node doomscroll.mjs item follow <id>
+node doomscroll.mjs item feedback --project demo --since 0 --latest 1 --json
+node doomscroll.mjs item get <id>                     # the raw {item}: current revision, state, responses
+node doomscroll.mjs item reply <id> "Ready for another look" --revision <sha>   # the revision you reviewed; a newer one = 409, no comment
+node doomscroll.mjs item tags <id> audio,ready
+node doomscroll.mjs item project demo scheme.json     # {"verdicts":[{"id":"ship","label":"Ship","tone":"accept"}]}
+node doomscroll.mjs item events --since 0 --limit 100  # raw API JSON; exit 6 + {"error":"resync",...} when the cursor was swept
+```
+
+Every call has a deadline covering headers and body (`DOOMSCROLL_TIMEOUT_MS`, default 30000 for one small read; writes
+and long polls 2x, a 64 MiB upload part and voice calls 10x, an MP4 download 20x). Reads (GET/HEAD) get 3 bounded
+attempts honoring `Retry-After` (capped at the read deadline); 429/5xx on all of them is exit 7, never a refusal. A reply,
+tag edit, item or voice call is sent once, and its 5xx is reported as refused (exit 1). A redirect is never followed and is
+refused. An upload part whose answer is lost re-reads the server's verified offset (`HEAD`) and resumes there, never
+re-sending committed bytes; three recoveries without progress give up (exit 7). The `HEAD` must carry all three upload
+headers consistent with the file, or the upload is refused before any byte is sent. Once every byte is committed the server
+hashes them: the client polls with growing pauses, never re-PUTs, up to the upload deadline (10x), then exit 7. An empty
+file is refused as bad input before any request for that file. `item reply` without `--revision` reads the item's current revision
+first; with it, exactly that revision is sent and a stale one is the server's 409 (no comment is created). While a video
+renders, `pr`/`local` poll every 10 s (or `DOOMSCROLL_TIMEOUT_MS` when smaller) and ride out 429 (`Retry-After` honored,
+capped) and 5xx until `--timeout`, then exit 7; the paid create request is never repeated. `DOOMSCROLL_PART_BYTES`
+shrinks upload parts on slow links. Exit codes: 1 refused or bad input, 2 video failed, 3 not signed in, 4 out of credits,
+5 still running, 6 events cursor swept (re-read state, continue from a newer cursor), 7 unreachable after the bounded
+attempts or deadlines (retry later; nothing is assumed done).
+
+| Route | Contract |
+|---|---|
+| `HEAD /api/agent/blobs/:sha256` | 200 complete, 204 partial, 404 unknown to this account; `Upload-Offset`, `Upload-Length`, `Upload-Complete` headers |
+| `PUT /api/agent/blobs/:sha256` | Raw `application/octet-stream`, `Content-Range: bytes start-end/total`, parts up to 64 MiB; `{sha256,bytes,offset,complete}` |
+| `POST /api/agent/items` | `{item:{key,title,description?,tags?},manifest,entry,kind,revision?,panels?,panelBlobs?,request?,postedAt?,source?}`; `kind` is video/audio/image/html/text/url; answers `{submissionId,itemKey,itemId,mediaId,revision,duplicate,links,state}` |
+| `POST /api/agent/items/:id/follow` | `{source:{tmuxSession,tmuxPane,cwd}}`; explicitly bind this session to future feedback on current bytes; answers `{item,revision,following:true,state,done}` |
+| `GET /api/agent/items/:id` | `{item}` with revisions, media, responses and derived pending/accepted/blocked state |
+| `GET /api/agent/items?tags=a,b&project=demo` | `{items}`; tags use AND |
+| `PUT /api/agent/items/:id/tags` | `{tags:["a","b"]}`; answers `{item}` |
+| `PUT /api/agent/projects/:name` | `{verdicts:[{id,label,emoji?,tone}]}`; tone accept/revise/reject; answers `{project:{name,verdicts}}` |
+| `POST /api/agent/items/:id/responses` | `{kind,revision,option?,text?,source?}`; kind approve/verdict/comment/like/done/clear; optional source identifies an API sender and prevents self-echo; stale revision 409; answers `{response,state,duplicate}` |
+| `GET /api/agent/responses?project=demo&since=0&latest=1` | `{responses}`; durable history, numeric response-ID cursor, each row includes current derived state |
+| `GET /api/agent/tags` | `{tags:[{tag,count}]}` |
+| `GET /api/agent/events?since=0&limit=100` | `{events:[{id,type,source,subject,time,data}]}` (CloudEvents fields, `id` = sequence); 410 `{error,resync:true}` when `since` is older than the retained log |
+
+Keys are `ext:<project>/<subject>` or `local:<sha>`. Requesting a review requires `request:true`.
+A new upload returns 201; replay/joined returns 200 without a charge. `clear` withdraws a verdict;
+likes and Done are not verdicts. Stored cards appear in My Reviews when enabled on the server. Uploaded HTML stays
+inert until activation and requires a separately configured cookieless content host.
+
+### Feedback notifications
+
+Inside tmux, `item post`, `pr`, and `local` attach the exact session, pane, and pane working directory. `item follow` explicitly attaches an existing item at its current revision. Reads and help do not subscribe. `item reply` includes the sender context without creating a binding, so its own feedback is not echoed back.
+
+When the operator enables source delivery, comments and approvals notify the attached session through the existing HTTP adapter. Registered HTTPS callbacks use signed event webhooks. Delivery is at least once; a received message is not proof the workflow acted on it. Old imports without a destination cannot resume a session automatically. Follow returns current state so a caller does not wait for an approval that happened before it attached.
+
+`approve` is acceptance of exact reviewed bytes and completes that review. A configured project needs an accept-tone option; a project without options needs no option. `clear` withdraws it. Legacy `done` and `like` never become approvals. A blocking review remains authoritative even when another reviewer approved.

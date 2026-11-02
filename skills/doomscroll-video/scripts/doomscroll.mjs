@@ -3,10 +3,11 @@
 // DoomScroll's metered voice APIs (speech, word-timed transcription) without an OpenAI key of your own.
 // Dependency-free (Node 18+). Reads the key from DOOMSCROLL_API_KEY or the browser sign-in saved by `login`, and never prints it.
 // MIT License. See ../../../LICENSE.
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HELP = `Usage:
@@ -16,6 +17,14 @@ const HELP = `Usage:
   doomscroll.mjs transcribe <audio file> [--out <file.json>] [--model whisper-1] [--words]
   doomscroll.mjs pr <owner/repo#number | github PR URL> [options]
   doomscroll.mjs local [--base <ref>] [--diff-file <path|->] [--title <text>] [--description <text>] [--repo <name>] [--include <path>]... [options]
+  doomscroll.mjs item follow <id>             Bind this session to future feedback on current bytes
+  doomscroll.mjs item post <manifest.json>    Upload files and submit a stored review item
+  doomscroll.mjs item feedback [--project <slug>] [--since <id>] [--latest 1] [--json]   Responses after a numeric cursor; --latest 1 keeps only each reviewer's newest per item revision
+  doomscroll.mjs item get <id>                Print the item as the API returns it ({"item":{revision,state,responses,...}})
+  doomscroll.mjs item reply <id> <text> [--revision <sha>]   Comment on the revision you reviewed (stale = 409, no comment); default: the current one
+  doomscroll.mjs item tags <id> a,b
+  doomscroll.mjs item project <slug> <scheme.json>   Set a project's verdict scheme ({"verdicts":[{id,label,tone,emoji?}]})
+  doomscroll.mjs item events [--since <seq>] [--limit <n>]   Your change log after a sequence number (raw API JSON); exit 6 when the cursor was swept
   doomscroll.mjs status <id>
   doomscroll.mjs download <id> [--out <file.mp4>] [--gif <file.gif>]
   doomscroll.mjs share <id>                     Enable its stable public-by-link MP4 URL
@@ -54,6 +63,18 @@ Voice for any OpenAI SDK: base URL <DOOMSCROLL_URL>/api/agent/v1 with the DoomSc
 
 Environment:
   DOOMSCROLL_URL       Server origin (default https://doomscroll.build)
+  DOOMSCROLL_TIMEOUT_MS  Deadline of one small read (default 30000, 100..3600000): a write gets 2x, a long poll 2x, a
+                       64 MiB upload part 10x, a voice call 10x, an MP4 download 20x; each covers headers and body.
+                       A read (GET/HEAD) gets 3 attempts; the server's hash check of a committed upload is waited out
+                       up to the upload deadline (10x); a video poll runs every 10 s (or this value when smaller)
+  DOOMSCROLL_PART_BYTES  Upload part size in bytes (default 64 MiB, 1..64 MiB): smaller parts bound each PUT on slow links
+
+Exit codes: 0 ok, 1 bad input or a refused request (the message names the HTTP status; a redirect, an empty upload file or
+an invalid upload state from the server count as refused), 2 the video failed, 3 not signed in, 4 out of credits, 5 still
+running after --timeout, 6 the events cursor was swept (stdout: {"error":"resync","status":410,"since","message"}; re-read
+the current state, then continue from a newer cursor), 7 unreachable (a deadline, a network error, or 429/5xx on every
+bounded read attempt; an upload still being verified past its deadline; a video poll rate-limited past --timeout: retry
+later, nothing is assumed done). A write (reply, tags, item, voice) is sent once: its 5xx is reported as refused.
   FFMPEG, FFPROBE      ffmpeg/ffprobe binaries for watermark (default: from PATH)
   FFMPEG_THREADS       Threads for watermark's decoder and x264 encoder, like --threads (default: ffmpeg's own)
 
@@ -69,6 +90,7 @@ function parseArgs(argv) {
     const arg = argv[i]
     if (arg === '-h' || arg === '--help') args.help = true
     else if (arg === '--no-wait') args.noWait = true
+    else if (arg === '--json') args.json = true
     else if (arg === '--words') args.words = true
     else if (arg === '--publish') args.publish = true
     else if (arg === '--no-publish') args.noPublish = true
@@ -97,6 +119,58 @@ const headers = () => {
   if (!key) fail('not signed in. Run: doomscroll.mjs login (or export DOOMSCROLL_API_KEY from DoomScroll Settings -> Agent access).', 3)
   return { Authorization: `Bearer ${key}`, Accept: 'application/json' }
 }
+const bounded = (value, fallback, min, max) => { const n = Number(value); return value === undefined || value === '' ? fallback : Number.isFinite(n) && n >= min && n <= max ? Math.floor(n) : fail(`${value} is out of range ${min}..${max}`) }
+const READ_MS = bounded(process.env.DOOMSCROLL_TIMEOUT_MS, 30_000, 100, 3_600_000)
+/** Per-purpose deadlines, each covering headers and body of one attempt. */
+const DEADLINES = { read: READ_MS, write: 2 * READ_MS, poll: 2 * READ_MS, upload: 10 * READ_MS, voice: 10 * READ_MS, download: 20 * READ_MS }
+const RETRY = { attempts: 3, backoff: READ_MS / 30, recoveries: 3 }
+/** Between two video status polls (10 s, or the read deadline when it is shorter, so tests run on a short clock). */
+const POLL_MS = Math.min(10_000, READ_MS)
+const PART_BYTES = bounded(process.env.DOOMSCROLL_PART_BYTES, 64 * 1024 * 1024, 1, 64 * 1024 * 1024)
+const exitFor = status => status === 401 ? 3 : status === 402 ? 4 : 1
+
+/**
+ * One request owner for every DoomScroll call. Each attempt has a deadline that covers the headers AND the body (the
+ * AbortController fires either way), scaled per purpose from DOOMSCROLL_TIMEOUT_MS. Retries are bounded and only for
+ * safe reads (GET/HEAD, 5xx/429/network/deadline, Retry-After honored up to the deadline); a POST/PUT is sent once and its
+ * caller decides what an ambiguous answer means. Returns {response, data} for any definite HTTP answer (a redirect is one:
+ * never followed, so callers refuse it like any other non-2xx), or {transient} once a retried read ran out of attempts
+ * without one (a 429/5xx on the last attempt included). `data` is parsed JSON ({} when the body is not JSON), text with
+ * {text: true}, a Buffer with {raw: true}. The transient message names the resolved URL without its query and never a body.
+ */
+async function http(path, { method = 'GET', headers: extra = {}, body, purpose = 'read', retry = method === 'GET' || method === 'HEAD', auth = true, raw = false, text = false } = {}) {
+  const deadline = DEADLINES[purpose], attempts = retry ? RETRY.attempts : 1, url = /^https?:\/\//.test(path) ? path : origin + path
+  let last = ''
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), deadline)
+    try {
+      const response = await fetch(url, { method, headers: { ...(auth ? headers() : {}), ...extra }, body, redirect: 'manual', signal: controller.signal })
+      const bytes = method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await response.arrayBuffer())
+      clearTimeout(timer)
+      if (retry && (response.status === 429 || response.status >= 500)) {
+        last = `HTTP ${response.status} on every one of ${attempts} attempts`
+        if (attempt < attempts) await sleep(retryAfter(response, attempt))
+        continue
+      }
+      let data = bytes
+      if (!raw) { const string = bytes.toString('utf8'); if (text) data = string; else { try { data = JSON.parse(string) } catch { data = {} } } }
+      return { response, data }
+    } catch (error) {
+      clearTimeout(timer)
+      last = controller.signal.aborted ? `no complete answer within the ${deadline} ms deadline` : (error.cause?.code || error.cause?.message || error.message)
+      if (attempt < attempts) await sleep(retryAfter(undefined, attempt))
+    }
+  }
+  return { transient: `could not reach ${url.split('?')[0]}: ${last}` }
+}
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+/** Retry-After in seconds (or an HTTP date), capped at the read deadline; else exponential backoff from RETRY.backoff. */
+function retryAfter(response, attempt) {
+  const header = response?.headers.get('retry-after')
+  const seconds = header === null || header === undefined ? NaN : /^\d+$/.test(header) ? Number(header) : (Date.parse(header) - Date.now()) / 1000
+  if (Number.isFinite(seconds)) return Math.min(Math.max(seconds, 0) * 1000, DEADLINES.read)
+  return RETRY.backoff * 2 ** (attempt - 1)
+}
 
 /** Opens a URL or file with the system's default app; a headless machine just keeps the printed link. */
 function openInBrowser(target) {
@@ -106,8 +180,10 @@ function openInBrowser(target) {
 
 /** Browser sign-in (device code): show a code, the user approves it on doomscroll, the key lands in a 0600 file, never on screen. */
 async function login() {
-  const post = (path, body) => fetch(origin + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}), redirect: 'error' })
-  const start = await (await post('/api/agent/device')).json()
+  const post = (path, body) => http(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}), purpose: 'write', auth: false })
+  const started = await post('/api/agent/device')
+  if (started.transient) fail(started.transient, 7)
+  const start = started.data
   if (!start.device_code) fail(`could not start sign-in: ${start.error || 'unexpected answer'}`)
   log(`Open ${start.verification_uri_complete}\nand approve the code ${start.user_code}`)
   openInBrowser(start.verification_uri_complete)
@@ -115,9 +191,8 @@ async function login() {
   while (Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, (start.interval || 3) * 1000))
     // A deploy or a network blip must not end the sign-in: keep polling through 5xx and connection errors until the code expires.
-    const response = await post('/api/agent/device/token', { device_code: start.device_code }).catch(() => null)
+    const { response, data } = await post('/api/agent/device/token', { device_code: start.device_code })
     if (!response || response.status === 428 || response.status >= 500) continue
-    const data = await response.json().catch(() => ({}))
     if (!response.ok) fail(data.error || `sign-in failed: ${response.status}`)
     let all = {}
     try { all = JSON.parse(readFileSync(CREDENTIALS, 'utf8')) } catch { /* first sign-in */ }
@@ -137,9 +212,11 @@ async function speak(text, args) {
   if (!input?.trim()) fail('speak needs the text, or - to read it from stdin')
   const format = args.out.split('.').pop()
   const body = { model: args.model || 'gpt-4o-mini-tts', voice: args.voice || 'onyx', input, ...(args.instructions ? { instructions: args.instructions } : {}), ...(args.speed ? { speed: Number(args.speed) } : {}), ...(['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'].includes(format) ? { response_format: format } : {}) }
-  const response = await fetch(`${origin}/api/agent/v1/audio/speech`, { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify(body), redirect: 'error' })
-  if (!response.ok) { const data = await response.json().catch(() => ({})); fail(`${response.status} ${data.error || response.statusText}`, response.status === 401 ? 3 : response.status === 402 ? 4 : 1) }
-  writeFileSync(args.out, Buffer.from(await response.arrayBuffer()))
+  // Paid: one attempt, never retried (a lost answer may already have been charged).
+  const { response, data, transient } = await http('/api/agent/v1/audio/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), purpose: 'voice', raw: true })
+  if (transient) fail(transient, 7)
+  if (!response.ok) { let error; try { error = JSON.parse(data.toString('utf8')).error } catch { /* not JSON */ } fail(`${response.status} ${error || response.statusText}`, exitFor(response.status)) }
+  writeFileSync(args.out, data)
   process.stdout.write(`${JSON.stringify({ file: args.out, creditsRemaining: Number(response.headers.get('x-doomscroll-credits-remaining')) })}\n`)
 }
 
@@ -150,30 +227,30 @@ async function transcribe(file, args) {
   form.append('file', new Blob([readFileSync(file)]), basename(file))
   form.append('model', args.model || 'whisper-1')
   if (args.words) { form.append('response_format', 'verbose_json'); form.append('timestamp_granularities[]', 'word') }
-  const response = await fetch(`${origin}/api/agent/v1/audio/transcriptions`, { method: 'POST', headers: headers(), body: form, redirect: 'error' })
-  const text = await response.text()
-  if (!response.ok) { let error; try { error = JSON.parse(text).error } catch { /* not JSON */ } fail(`${response.status} ${error || response.statusText}`, response.status === 401 ? 3 : response.status === 402 ? 4 : 1) }
+  const { response, data: text, transient } = await http('/api/agent/v1/audio/transcriptions', { method: 'POST', body: form, purpose: 'voice', text: true })
+  if (transient) fail(transient, 7)
+  if (!response.ok) { let error; try { error = JSON.parse(text).error } catch { /* not JSON */ } fail(`${response.status} ${error || response.statusText}`, exitFor(response.status)) }
   if (args.out) { writeFileSync(args.out, text); process.stdout.write(`${JSON.stringify({ file: args.out })}\n`) } else process.stdout.write(`${text}\n`)
 }
 
-async function request(path, body) {
-  let response
-  try {
-    response = await fetch(origin + path, { method: body ? 'POST' : 'GET', headers: { ...headers(), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, redirect: 'error' })
-  } catch (error) { fail(`could not reach ${origin}: ${error.message}`) }
-  return { response, data: await response.json().catch(() => ({})) }
+/** A JSON API call: reads are retried, writes are sent once; an exhausted read or a lost write answer is exit 7. */
+async function request(path, body, method = body ? 'POST' : 'GET') {
+  const answer = await http(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, purpose: body ? 'write' : 'read' })
+  if (answer.transient) fail(answer.transient, 7)
+  return answer
 }
 
-async function call(path, body) {
-  const { response, data } = await request(path, body)
-  if (!response.ok) fail(`${response.status} ${data.error || response.statusText}`, response.status === 401 ? 3 : response.status === 402 ? 4 : 1)
+async function call(path, body, method) {
+  const { response, data } = await request(path, body, method)
+  if (!response.ok) fail(`${response.status} ${data.error || response.statusText}`, exitFor(response.status))
   return data
 }
 
 async function download(url, file) {
-  const response = await fetch(url, { headers: headers(), redirect: 'error' })
-  if (!response.ok) fail(`download failed: ${response.status}`)
-  writeFileSync(file, Buffer.from(await response.arrayBuffer()))
+  const { response, data, transient } = await http(url, { purpose: 'download', raw: true })
+  if (transient) fail(transient, 7)
+  if (!response.ok) fail(`download failed: ${response.status}`, exitFor(response.status))
+  writeFileSync(file, data)
   return file
 }
 
@@ -215,22 +292,22 @@ async function wait(id, args) {
   const deadline = Date.now() + Number(args.timeout || 60) * 60_000
   let last = ''
   for (;;) {
-    // A deploy or a network blip must not end the wait (the render keeps going on the server): retry 5xx and connection errors.
-    const response = await fetch(`${origin}/api/agent/videos/${id}`, { headers: headers(), redirect: 'error' }).catch(error => ({ blip: error.message }))
-    if (response.blip || response.status >= 500) {
-      if (Date.now() > deadline) fail(`could not reach ${origin}: ${response.blip || response.status}`)
-      if (last !== 'blip') { log(`connection problem (${response.blip || response.status}), still waiting`); last = 'blip' }
-      await new Promise(resolve => setTimeout(resolve, 10_000))
+    // A deploy, a network blip or a rate limit must not end the wait (the render keeps going on the server): keep polling
+    // through 5xx, connection errors and 429 (its Retry-After honored, capped) until the overall deadline.
+    const { response, data, transient } = await http(`/api/agent/videos/${id}`, { purpose: 'poll', retry: false })
+    if (transient || response.status === 429 || response.status >= 500) {
+      if (Date.now() > deadline) fail(transient || `could not reach ${origin}: ${response.status}`, 7)
+      if (last !== 'blip') { log(`connection problem (${transient || response.status}), still waiting`); last = 'blip' }
+      await sleep(Math.min(Math.max(POLL_MS, response?.status === 429 ? retryAfter(response, 1) : 0), deadline - Date.now()))
       continue
     }
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok) fail(`${response.status} ${data.error || response.statusText}`, response.status === 401 ? 3 : 1)
+    if (!response.ok) fail(`${response.status} ${data.error || response.statusText}`, exitFor(response.status))
     const { video } = data
     const line = `${video.status}: ${video.stage}${video.progress.percent === null ? '' : ` (${video.progress.percent}%)`}`
     if (line !== last) { log(line); last = line }
     if (video.status === 'succeeded' || video.status === 'failed') return video
     if (Date.now() > deadline) fail(`still ${video.status} after ${args.timeout || 60} minutes; check later with: doomscroll.mjs status ${id}`, 5)
-    await new Promise(resolve => setTimeout(resolve, 10_000))
+    await sleep(POLL_MS)
   }
 }
 
@@ -294,7 +371,9 @@ function watermark(input, output, jingle, jingleStart, threads) {
     `[v2][name]overlay=x=(W-w)/2:y=${markY + Math.round(markWidth * 0.62)}:enable='gte(t,${D})':eof_action=pass,format=yuv420p[v]`,
     // The jingle starts with the outro; the video's own audio (if any) is padded with silence under it.
     `[4:a]atrim=0:${O},afade=t=out:st=${O - 0.3}:d=0.3,aresample=48000,aformat=channel_layouts=stereo,adelay=delays=${Math.round(D * 1000)}:all=1,volume=0.45[jingle]`,
-    hasAudio ? `[0:a]aresample=48000,aformat=channel_layouts=stereo,apad=pad_dur=${O}[voice];[voice][jingle]amix=inputs=2:duration=first:normalize=0[a]` : `[jingle]apad=whole_dur=${D + O}[a]`,
+    hasAudio ? `[0:a]aresample=48000,aformat=channel_layouts=stereo,apad=pad_dur=${O}[voice];[voice][jingle]amix=inputs=2:duration=first:normalize=0[mix]` : `[jingle]apad=whole_dur=${D + O}[mix]`,
+    // Phone video is mastered near -14 LUFS; TTS arrives near -25, so it played ~10 dB quieter than everything around it.
+    `[mix]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000,aformat=channel_layouts=stereo[a]`,
   ].join(';')
   const image = name => ['-loop', '1', '-framerate', '30', '-t', String(O), '-i', join(ASSETS, name)]
   run(ffmpeg, ['-v', 'error', '-y', '-threads', threads ?? '2', '-i', input, '-loop', '1', '-framerate', '30', '-t', String(D), '-i', join(ASSETS, 'watermark.png'), ...image('mark.png'), ...image('outro-text.png'), ...(jingle ? ['-ss', String(Number(jingleStart) || 0)] : []), '-i', jingle || join(ASSETS, 'jingle.m4a'),
@@ -308,8 +387,8 @@ function sessionSource() {
   const pane = process.env.TMUX_PANE
   if (!process.env.TMUX || !/^%\d+$/.test(pane ?? '')) return {}
   try {
-    const [tmuxSession, cwd] = execFileSync('tmux', ['display-message', '-p', '-t', pane, '#S\t#{pane_current_path}'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim().split('\t')
-    return tmuxSession && cwd ? { source: { tmuxSession, tmuxPane: pane, cwd } } : {}
+    const [tmuxSession, currentPane, cwd] = execFileSync('tmux', ['display-message', '-p', '-t', pane, '#S\t#{pane_id}\t#{pane_current_path}'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim().split('\t')
+    return tmuxSession && currentPane === pane && cwd ? { source: { tmuxSession, tmuxPane: pane, cwd } } : {}
   } catch { return {} }
 }
 
@@ -360,7 +439,120 @@ function readNotes(path) {
   try { return JSON.parse(readFileSync(path === '-' ? 0 : path, 'utf8')) } catch (error) { fail(`--notes must be a JSON file: ${error.message}`) }
 }
 
-if (command === 'login') await login()
+
+async function itemCommand(action, args) {
+  const id = args._[2]
+  if (action === 'feedback') {
+    const query = new URLSearchParams({ since: args.since || '0' })
+    if (args.project) query.set('project', args.project)
+    if (args.latest !== undefined) query.set('latest', args.latest)
+    return call(`/api/agent/responses?${query}`)
+  }
+  if (action === 'events') {
+    const query = new URLSearchParams({ since: args.since || '0', ...(args.limit === undefined ? {} : { limit: args.limit }) })
+    const { response, data } = await request(`/api/agent/events?${query}`)
+    // 410: events after `since` were swept. Never an empty list: the caller must re-read state before continuing.
+    if (response.status === 410 && data.resync) { process.stdout.write(`${JSON.stringify({ error: 'resync', status: 410, since: Number(args.since || 0), message: data.error })}\n`); process.exit(6) }
+    if (!response.ok) fail(`${response.status} ${data.error || response.statusText}`, exitFor(response.status))
+    return data
+  }
+  if (!id) fail(`item ${action} needs ${action === 'post' ? 'a manifest file' : action === 'project' ? 'a project slug and a scheme file' : 'an item id'}`)
+  if (action === 'project') {
+    if (!args._[3]) fail('item project needs <slug> <scheme.json>')
+    let scheme
+    try { scheme = JSON.parse(readFileSync(args._[3], 'utf8')) } catch (error) { fail(`the scheme must be a JSON file: ${error.message}`) }
+    return call(`/api/agent/projects/${encodeURIComponent(id)}`, scheme, 'PUT')
+  }
+  if (action === 'follow') {
+    const context = sessionSource()
+    if (!context.source) fail('item follow requires an exact current tmux session')
+    return call(`/api/agent/items/${encodeURIComponent(id)}/follow`, context)
+  }
+  if (action === 'get') return call(`/api/agent/items/${encodeURIComponent(id)}`)
+  if (action === 'reply') {
+    const text = args._.slice(3).join(' ')
+    if (!text) fail('item reply needs text')
+    // --revision is the revision the caller reviewed, sent as given, so the server's 409 catches a newer upload in between;
+    // without it the comment goes on whatever the item's current revision is now.
+    const revision = args.revision ?? (await call(`/api/agent/items/${encodeURIComponent(id)}`)).item.revision
+    return call(`/api/agent/items/${encodeURIComponent(id)}/responses`, { kind: 'comment', revision, text, ...sessionSource() })
+  }
+  if (action === 'tags') return call(`/api/agent/items/${encodeURIComponent(id)}/tags`, { tags: (args._[3] || '').split(',').filter(Boolean) }, 'PUT')
+  if (action !== 'post') fail('item takes post, follow, get, feedback, reply, tags, project or events')
+  const file = resolve(id), root = dirname(file), input = JSON.parse(readFileSync(file, 'utf8'))
+  const seen = new Set()
+  for (const [path, sha] of [...Object.entries(input.manifest || {}), ...Object.entries(input.panelBlobs || {})]) {
+    if (!/^[a-f0-9]{64}$/.test(sha)) fail(`invalid SHA-256 for ${path}`)
+    if (seen.has(sha)) continue
+    seen.add(sha)
+    const endpoint = `/api/agent/blobs/${sha}`
+    const local = resolve(root, path), rel = relative(root, local)
+    if (!rel || rel === '..' || rel.startsWith(`..${sep}`)) fail(`file outside manifest directory: ${path}`)
+    const fd = openSync(local, 'r')
+    try {
+      const size = fstatSync(fd).size, hash = createHash('sha256'), buffer = Buffer.alloc(Math.min(size, PART_BYTES))
+      if (!size) fail(`${path} is empty; the server stores no empty files`)
+      for (let position = 0; position < size;) { const n = readSync(fd, buffer, 0, Math.min(buffer.length, size - position), position); if (!n) fail(`short read: ${path}`); hash.update(buffer.subarray(0, n)); position += n }
+      if (hash.digest('hex') !== sha) fail(`file does not match manifest SHA-256: ${path}`)
+      await uploadBlob(endpoint, path, size, offset => { const n = readSync(fd, buffer, 0, Math.min(buffer.length, size - offset), offset); if (!n) fail(`short read: ${path}`); return buffer.subarray(0, n) })
+    } finally { closeSync(fd) }
+  }
+  return call('/api/agent/items', { ...input, ...sessionSource() })
+}
+
+/**
+ * What the server has of this blob: `complete`, or the verified offset the next part must start at (0 when unknown).
+ * The three upload headers must all be present and consistent with this file (a missing Upload-Offset is not 0): anything
+ * else is refused before a single byte is sent.
+ */
+async function serverOffset(endpoint, size) {
+  const { response, transient } = await http(endpoint, { method: 'HEAD', purpose: 'read' })
+  if (transient) fail(transient, 7)
+  if (response.status === 404) return 0
+  if (response.status !== 200 && response.status !== 204) fail(`blob check failed: ${response.status}`, exitFor(response.status))
+  const complete = response.headers.get('Upload-Complete'), offset = response.headers.get('Upload-Offset'), length = response.headers.get('Upload-Length')
+  const valid = (complete === 'true' || complete === 'false') && /^\d+$/.test(offset ?? '') && length === String(size) && Number(offset) <= size && (complete === 'false' || Number(offset) === size)
+  if (!valid) fail('the server answered the blob check with an invalid upload state')
+  return complete === 'true' ? 'complete' : Number(offset)
+}
+
+/**
+ * Resumable upload driven by the server's verified offset. Every part is PUT once; an ambiguous answer (deadline, network,
+ * 5xx) or an offset conflict (409) re-HEADs and continues from what the server has, so committed bytes are never re-sent
+ * and nothing is assumed done. `recoveries` consecutive rounds without progress give up (exit 7). Once every byte is
+ * committed (offset = size, not complete) the server is hashing them: that is polled with growing pauses, never re-PUT,
+ * up to the upload deadline, then exit 7.
+ */
+async function uploadBlob(endpoint, path, size, part) {
+  let offset = await serverOffset(endpoint, size), stalls = 0, polls = 0, verifyBy = 0
+  while (offset !== 'complete') {
+    if (offset === size) {
+      verifyBy ||= Date.now() + DEADLINES.upload
+      if (Date.now() >= verifyBy) fail(`upload of ${path}: the server was still verifying the bytes ${DEADLINES.upload} ms after they were all committed`, 7)
+      await sleep(Math.min(RETRY.backoff * 2 ** polls++, DEADLINES.read, verifyBy - Date.now()))
+      offset = await serverOffset(endpoint, size)
+      continue
+    }
+    verifyBy = 0; polls = 0
+    const bytes = part(offset)
+    const { response, data, transient } = await http(endpoint, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream', 'Content-Range': `bytes ${offset}-${offset + bytes.length - 1}/${size}` }, body: bytes, purpose: 'upload' })
+    if (response?.ok) {
+      if (data.complete) return
+      if (!Number.isInteger(data.offset) || data.offset <= offset || data.offset > size) fail('server returned an invalid upload offset')
+      offset = data.offset; stalls = 0
+      continue
+    }
+    if (response && response.status !== 409 && response.status < 500) fail(`${response.status} ${data.error || 'upload failed'}`, exitFor(response.status))
+    const reason = transient || `${response.status} ${data.error || response.statusText}`
+    const verified = await serverOffset(endpoint, size)
+    if (verified !== 'complete' && verified <= offset && ++stalls >= RETRY.recoveries) fail(`upload of ${path} made no progress after ${RETRY.recoveries} recoveries (${reason})`, 7)
+    if (verified === 'complete' || verified > offset) stalls = 0
+    offset = verified
+  }
+}
+
+if (command === 'item') process.stdout.write(`${JSON.stringify(await itemCommand(target, args))}\n`)
+else if (command === 'login') await login()
 else if (command === 'logout') { try { const all = JSON.parse(readFileSync(CREDENTIALS, 'utf8')); delete all[origin]; Object.keys(all).length ? writeFileSync(CREDENTIALS, JSON.stringify(all, null, 2), { mode: 0o600 }) : rmSync(CREDENTIALS) } catch { /* nothing saved */ } process.stdout.write(`${JSON.stringify({ signedOut: true })}\n`) }
 else if (command === 'speak') await speak(target, args)
 else if (command === 'transcribe') await transcribe(target, args)
@@ -398,7 +590,7 @@ else if (command === 'download') {
   const notes = readNotes(args.notes), screens = readScreens(args.screen)
   const sharing = args.shareable ? { shareable: true } : args.private ? { shareable: false } : {}
   const extras = { theme, ...(args.language ? { language: args.language } : {}), ...(notes ? { notes } : {}), ...(screens.length ? { screens } : {}), ...sharing }
-  const body = command === 'pr' ? { pr: parsePr(target), ...extras, ...(args.publish ? { publish: true } : args.noPublish ? { publish: false } : {}), ...(args.auto ? { auto: true } : {}) } : { change: localChange(args), ...extras, ...sessionSource() }
+  const body = command === 'pr' ? { pr: parsePr(target), ...extras, ...sessionSource(), ...(args.publish ? { publish: true } : args.noPublish ? { publish: false } : {}), ...(args.auto ? { auto: true } : {}) } : { change: localChange(args), ...extras, ...sessionSource() }
   let answer = args.orShareable && body.publish ? await request('/api/agent/videos', body) : undefined
   // --publish --or-shareable: publishing needs write access and Stealth off; when DoomScroll refuses, the video is made
   // shareable instead, so reviewers can still play it from the PR comment.

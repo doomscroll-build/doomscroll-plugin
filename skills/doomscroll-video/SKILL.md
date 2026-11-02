@@ -261,7 +261,9 @@ node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs local --title "Cache search resu
 - Every DoomScroll video comes with a small DoomScroll watermark and a short outro. Never remove them. To brand any other
   video the same way: `node <this skill>/scripts/doomscroll.mjs watermark <video> [--out file.mp4]` (needs ffmpeg).
 - Exit codes: 2 the video failed (the JSON has `error`; the credit is refunded), 3 not signed in, 4 out of credits,
-  5 still running after `--timeout` minutes (resume with `status`/`download`).
+  5 still running after `--timeout` minutes (resume with `status`/`download`), 6 an `item events` cursor was swept
+  (stdout `{"error":"resync"}`: re-read state first), 7 DoomScroll was unreachable after the bounded attempts (every
+  call has a deadline, `DOOMSCROLL_TIMEOUT_MS`; retry later, nothing was assumed done).
 - The same PR commit, skin and language is one video: submitting it again returns the existing one at no charge.
 
 Result: `{"id","status":"succeeded","mp4","gif","previewUrl","watchUrl","shareable","shareUrl"}`. `shareUrl` is the stable public-by-link narrated MP4 when enabled; `previewUrl` is a public silent GIF;
