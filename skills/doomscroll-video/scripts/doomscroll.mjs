@@ -27,6 +27,8 @@ const HELP = `Usage:
   doomscroll.mjs item events [--since <seq>] [--limit <n>]   Your change log after a sequence number (raw API JSON); exit 6 when the cursor was swept
   doomscroll.mjs status <id>
   doomscroll.mjs download <id> [--out <file.mp4>] [--gif <file.gif>]
+  doomscroll.mjs video-comment <owner/repo#number | PR URL> --attachment <https://github.com/user-attachments/assets/…>
+                                               Best effort: put the MP4 you uploaded to GitHub in your --comment, replacing its GIF
   doomscroll.mjs share <id>                     Enable its public watch page (no sign-in) and public MP4 URL
   doomscroll.mjs unshare <id>                   Disable its public watch page and MP4 URL
   doomscroll.mjs me
@@ -99,6 +101,7 @@ function parseArgs(argv) {
     else if (arg === '--open') args.open = true
     else if (arg === '--auto') args.auto = true
     else if (arg === '--comment') args.comment = true
+    else if (arg === '--attachment') args.attachment = argv[++i]
     else if (arg === '--or-shareable') args.orShareable = true
     else if (arg.startsWith('--')) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
@@ -439,6 +442,30 @@ function commentOnPr({ owner, repo, number }, video) {
   }
 }
 
+const ATTACHMENT = /^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]{36}$/
+/**
+ * `video-comment --attachment`: GitHub plays inline only videos uploaded to GitHub itself, and it has no API for that upload,
+ * so the agent uploads the MP4 through the PR's comment box in a signed-in browser and hands the URL here. The user's own
+ * `--comment` then shows that player instead of the GIF (the DoomScroll links stay). Without one the GIF simply stays.
+ */
+function videoInComment({ owner, repo, number }, attachment) {
+  if (!ATTACHMENT.test(attachment || '')) fail('--attachment must be the https://github.com/user-attachments/assets/<id> URL GitHub gave the uploaded MP4')
+  const gh = (ghArgs, input) => execFileSync('gh', ghArgs, { input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+  try {
+    const me = gh(['api', 'user', '--jq', '.login'])
+    const mine = JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${owner}/${repo}/issues/${number}/comments`])).flat()
+      .filter(comment => comment.user?.login === me && comment.body?.includes(COMMENT_MARKER)).at(-1)
+    if (!mine) fail('no DoomScroll comment of yours on this PR yet; run `pr … --comment` first')
+    const player = /^(?:\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)|https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]{36})$/m
+    if (!player.test(mine.body)) fail('your DoomScroll comment has no preview to replace')
+    const url = gh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/issues/comments/${mine.id}`, '--input', '-', '--jq', '.html_url'], JSON.stringify({ body: mine.body.replace(player, attachment) }))
+    return { comment: url, video: 'uploaded' }
+  } catch (error) {
+    if (error.status === undefined && !error.stderr) throw error
+    fail(`could not edit the comment: ${String(error.stderr || error.message).trim().split('\n').at(-1)}`)
+  }
+}
+
 function readNotes(path) {
   if (!path) return undefined
   try { return JSON.parse(readFileSync(path === '-' ? 0 : path, 'utf8')) } catch (error) { fail(`--notes must be a JSON file: ${error.message}`) }
@@ -586,6 +613,7 @@ else if (command === 'gh') {
   catch (error) { fail(error.code === 'ENOENT' ? 'gh not found; install the GitHub CLI and run gh auth login' : 'gh is not signed in; run gh auth login first') }
   process.stdout.write(`${JSON.stringify(await call('/api/agent/github', { text }))}\n`)
 }
+else if (command === 'video-comment') process.stdout.write(`${JSON.stringify(videoInComment(parsePr(target), args.attachment))}\n`)
 else if (command === 'status') { if (!target) fail('status needs an id'); process.stdout.write(`${JSON.stringify((await call(`/api/agent/videos/${encodeURIComponent(target)}`)).video)}\n`) }
 else if (command === 'share' || command === 'unshare') {
   if (!target) fail(`${command} needs an id`)

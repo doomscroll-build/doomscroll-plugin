@@ -293,7 +293,17 @@ for every PR video unless the user asked to keep it off the PR; never hand-write
 
 The default remains private. Never override Stealth mode silently. Repeating the same PR, skin and language with publication enabled reuses its saved video without another render or credit. A posting failure leaves an already completed private video intact; correct the account or access and retry.
 
-All media stays hosted on DoomScroll. Never upload the MP4 to GitHub and never write any other video comment than `--comment`'s. For local changes, open the PR first and make an explicit PR video request if publication is wanted.
+**Best effort: the real video in that comment.** GitHub plays a video inline only when it was uploaded to GitHub, and
+GitHub has no API for that upload. So, once the video is done (`download <id> --out doomscroll.mp4`), if you can drive a
+browser that is already signed in to GitHub (for example Claude in Chrome or a Playwright browser) and the MP4 is under 10 MB:
+open the PR, attach the MP4 to the comment box at the bottom (its file input or drag and drop) WITHOUT submitting, wait until
+GitHub writes a `https://github.com/user-attachments/assets/…` link into the box, copy that link, clear the box, then run
+`node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs video-comment <owner/repo#number> --attachment <that link>`. It swaps the GIF
+in your `--comment` for the playable video and keeps the DoomScroll links. If any step fails (no browser, signed out, too
+big, upload refused), stop and leave the GIF: the comment already works. Never sign in for the user, never commit the MP4
+to the repository, and never post a second video comment.
+
+Everything else stays hosted on DoomScroll; never write any other video comment than `--comment`'s. For local changes, open the PR first and make an explicit PR video request if publication is wanted.
 
 Installing the MCP server or this skill alone never submits PRs by itself; the Claude Code plugin's hooks ask you to after a push (see "When to reach for it"). Invoke `create_video` as part of the requested PR/video workflow, confirm the returned job id, and poll `get_video` through completion. If submission fails before a job exists, tell the user the actual error and how to fix it rather than claiming a video is cooking.
 
