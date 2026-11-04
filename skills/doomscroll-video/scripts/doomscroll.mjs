@@ -27,8 +27,8 @@ const HELP = `Usage:
   doomscroll.mjs item events [--since <seq>] [--limit <n>]   Your change log after a sequence number (raw API JSON); exit 6 when the cursor was swept
   doomscroll.mjs status <id>
   doomscroll.mjs download <id> [--out <file.mp4>] [--gif <file.gif>]
-  doomscroll.mjs share <id>                     Enable its stable public-by-link MP4 URL
-  doomscroll.mjs unshare <id>                   Disable its public MP4 URL
+  doomscroll.mjs share <id>                     Enable its public watch page (no sign-in) and public MP4 URL
+  doomscroll.mjs unshare <id>                   Disable its public watch page and MP4 URL
   doomscroll.mjs me
   doomscroll.mjs gh                            Let DoomScroll read your PRs with your GitHub CLI sign-in (ask the user first)
   doomscroll.mjs auto on|off|status          Automatic PR videos and video offers in Claude Code (the plugin's hooks; default on)
@@ -111,6 +111,10 @@ function parseArgs(argv) {
 }
 
 const origin = (process.env.DOOMSCROLL_URL || 'https://doomscroll.build').replace(/\/+$/, '')
+/** How the output names DoomScroll as a place: its host, e.g. doomscroll.build. */
+const host = new URL(origin).host
+/** A `/watch/<token>` page: anyone holding the link can watch, signed in or not. */
+const unlisted = url => /\/watch\/[0-9a-f]{32}$/.test(url)
 const CONFIG = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'doomscroll')
 const CREDENTIALS = join(CONFIG, 'credentials.json'), SETTINGS = join(CONFIG, 'settings.json')
 const saved = () => { try { return JSON.parse(readFileSync(CREDENTIALS, 'utf8'))[origin]?.apiKey } catch { return undefined } }
@@ -316,7 +320,8 @@ async function finish(video, args, extra = {}) {
   const mp4 = await download(video.video.mp4Url, args.out || `doomscroll-${video.id}.mp4`)
   const gif = args.gif ? await download(video.video.gifUrl, args.gif) : undefined
   const opened = args.open ? openInBrowser(video.video.watchUrl || video.video.shareUrl || resolve(mp4)) : undefined
-  process.stdout.write(`${JSON.stringify({ id: video.id, status: 'succeeded', mp4, ...(gif ? { gif } : {}), previewUrl: video.video.previewUrl, watchUrl: video.video.watchUrl, publish: video.publish, shareable: video.shareable, shareUrl: video.video.shareUrl, ...(args.open ? { opened } : {}), ...extra })}\n`)
+  if (video.video.watchUrl) log(`watch it on ${host}: ${video.video.watchUrl}${unlisted(video.video.watchUrl) ? ' (anyone with the link)' : ''}`)
+  process.stdout.write(`${JSON.stringify({ id: video.id, status: 'succeeded', mp4, ...(gif ? { gif } : {}), previewUrl: video.video.previewUrl, watchUrl: video.video.watchUrl, publish: video.publish, shareable: video.shareable, shareUrl: video.video.shareUrl, ...(video.video.appUrl ? { appUrl: video.video.appUrl } : {}), ...(args.open ? { opened } : {}), ...extra })}\n`)
 }
 
 const args = parseArgs(process.argv.slice(2))
@@ -419,8 +424,8 @@ function commentOnPr({ owner, repo, number }, video) {
   if (video.publish) return { comment: 'skipped', commentReason: 'DoomScroll posts this video on the PR itself' }
   const { watchUrl, previewUrl, shareUrl } = video.links ?? {}
   if (!previewUrl) return { comment: 'skipped', commentReason: 'no preview link' }
-  const site = new URL(origin)
-  const body = `${COMMENT_MARKER}\n### 🎬 DoomScroll video of this PR\n\n[![DoomScroll video: it plays here when it is ready](${previewUrl})](${watchUrl})\n\n**[▶ Watch on DoomScroll](${watchUrl})**${shareUrl ? ` · [Play the MP4](${shareUrl})` : ''}, a short narrated walkthrough of this pull request.\n\n<sub>🎬 10x your reviews! Watch your PRs as videos with [${site.host.replace(/^doomscroll/i, 'DoomScroll')}](${site.origin}/)</sub>\n`
+  const shared = shareUrl ? ` · [Play the MP4](${shareUrl})` : ''
+  const body = `${COMMENT_MARKER}\n### 🎬 DoomScroll video of this PR\n\n[![DoomScroll video: it plays here when it is ready](${previewUrl})](${watchUrl})\n\n**[▶ Watch on ${host}](${watchUrl})**${shared}, a short narrated walkthrough of this pull request.\n\n<sub>🎬 10x your reviews! Watch your PRs as videos on [${host}](${origin}/)</sub>\n`
   const gh = (ghArgs, input) => execFileSync('gh', ghArgs, { input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
   try {
     const me = gh(['api', 'user', '--jq', '.login'])
@@ -468,7 +473,11 @@ async function itemCommand(action, args) {
     if (!context.source) fail('item follow requires an exact current tmux session')
     return call(`/api/agent/items/${encodeURIComponent(id)}/follow`, context)
   }
-  if (action === 'get') return call(`/api/agent/items/${encodeURIComponent(id)}`)
+  if (action === 'get') {
+    const found = await call(`/api/agent/items/${encodeURIComponent(id)}`)
+    if (found.item?.links?.watchUrl) log(`open it on ${new URL(found.item.links.watchUrl).host}: ${found.item.links.watchUrl}`)
+    return found
+  }
   if (action === 'reply') {
     const text = args._.slice(3).join(' ')
     if (!text) fail('item reply needs text')
@@ -497,7 +506,9 @@ async function itemCommand(action, args) {
       await uploadBlob(endpoint, path, size, offset => { const n = readSync(fd, buffer, 0, Math.min(buffer.length, size - offset), offset); if (!n) fail(`short read: ${path}`); return buffer.subarray(0, n) })
     } finally { closeSync(fd) }
   }
-  return call('/api/agent/items', { ...input, ...sessionSource() })
+  const stored = await call('/api/agent/items', { ...input, ...sessionSource() })
+  if (stored.links?.watchUrl) log(`open it on ${new URL(stored.links.watchUrl).host}: ${stored.links.watchUrl}`)
+  return stored
 }
 
 /**
@@ -579,7 +590,8 @@ else if (command === 'status') { if (!target) fail('status needs an id'); proces
 else if (command === 'share' || command === 'unshare') {
   if (!target) fail(`${command} needs an id`)
   const { video } = await call(`/api/agent/videos/${encodeURIComponent(target)}/sharing`, { shareable: command === 'share' })
-  process.stdout.write(`${JSON.stringify({ id: video.id, shareable: video.shareable, shareUrl: video.video?.shareUrl ?? null })}\n`)
+  if (video.shareable) log(`anyone with this link can watch it on ${host}: ${video.links.watchUrl}`)
+  process.stdout.write(`${JSON.stringify({ id: video.id, shareable: video.shareable, shareUrl: video.video?.shareUrl ?? null, watchUrl: video.links.watchUrl })}\n`)
 }
 else if (command === 'download') {
   if (!target) fail('download needs an id')
@@ -604,14 +616,14 @@ else if (command === 'download') {
   const { video, credits, automatic, watchUrl, connectUrl } = answer?.data ?? await call('/api/agent/videos', body)
   if (!video) {
     // The DoomScroll GitHub App makes this PR's videos by itself: nothing was queued or charged.
-    log('the DoomScroll GitHub App makes this PR\'s video automatically; nothing was queued')
+    log(`the DoomScroll GitHub App makes this PR's video automatically; nothing was queued. Watch it on ${host}: ${watchUrl}`)
     if (args.open) openInBrowser(watchUrl)
     process.stdout.write(`${JSON.stringify({ status: 'automatic', watchUrl })}\n`)
     process.exit(0)
   }
   log(`queued ${video.id} (${credits.unlimited ? 'unlimited' : `${credits.remaining} credits left`})`)
   // Where the video will be, known now: the links go live when it is done, so a caller can hand them on without waiting.
-  if (video.links?.watchUrl) log(`it will be at ${video.links.watchUrl}`)
+  if (video.links?.watchUrl) log(`it will be on ${host}: ${video.links.watchUrl}${unlisted(video.links.watchUrl) ? ' (anyone with the link can watch)' : ''}`)
   const tip = { ...(automatic === false ? { tip: `Connect GitHub at ${connectUrl} and every new PR gets its video automatically.` } : {}), ...(args.comment ? commentOnPr(body.pr, video) : {}) }
   if (args.noWait) process.stdout.write(`${JSON.stringify({ id: video.id, status: video.status, ...(video.links ?? {}), ...tip })}\n`)
   else await finish(await wait(video.id, args), args, tip)

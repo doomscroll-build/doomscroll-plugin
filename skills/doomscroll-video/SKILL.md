@@ -19,7 +19,7 @@ Never build the video yourself (no Remotion, ffmpeg slideshows or TTS scripts): 
 
 **If the doomscroll MCP tools are available** (`create_video`, `get_video`, `set_video_sharing`, `account`), use them instead of the script:
 the client already signed in, `create_video` takes the same `pr` or `change` plus `language`, `notes` and optional `shareable`, and
-`create_video` answers at once with `links` (where the video will be: `watchUrl`, `previewUrl`, `shareUrl`), so you can hand them on
+`create_video` answers at once with `links` (where the video will be: `watchUrl`, `appUrl`, `previewUrl`, `shareUrl`), so you can hand them on
 and carry on; `get_video` adds the MP4 download when it is done. Everything else
 below (ask once, investigate, write the notes, put it in the PR) is the same.
 
@@ -266,8 +266,13 @@ node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs local --title "Cache search resu
   call has a deadline, `DOOMSCROLL_TIMEOUT_MS`; retry later, nothing was assumed done).
 - The same PR commit, skin and language is one video: submitting it again returns the existing one at no charge.
 
-Result: `{"id","status":"succeeded","mp4","gif","previewUrl","watchUrl","shareable","shareUrl"}`. `shareUrl` is the stable public-by-link narrated MP4 when enabled; `previewUrl` is a public silent GIF;
-`watchUrl` opens the video's card on DoomScroll (a PR's card, or `/?local=<id>` for local changes).
+Result: `{"id","status":"succeeded","mp4","gif","previewUrl","watchUrl","appUrl","shareable","shareUrl"}`. `shareUrl` is the stable public-by-link narrated MP4 when enabled; `previewUrl` is a public silent GIF;
+`watchUrl` is where people watch it on doomscroll.build: `/watch/<token>`, which anyone with the link can open without signing in
+(a published PR video, or one shared by link), else the sign-in gated card of a private video; `appUrl` is always the in-app
+card (a PR's card, or `/?local=<id>` for local changes).
+
+**Always give the user the `watchUrl` as a clickable link**, and name the place: "Watch it on doomscroll.build: <link>". The
+same goes for stored review items (`item post`, `item get`): their `links.watchUrl` is the item's doomscroll.build page.
 
 Watch or spot-check the MP4 before handing it over when you can (for example, extract a few frames with `ffmpeg` if it
 is installed). If the video misses something important, improve the notes and submit again; a changed local diff or

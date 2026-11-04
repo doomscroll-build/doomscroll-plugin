@@ -1,7 +1,7 @@
 # DoomScroll for coding agents
 
-Ask your coding agent for a video of your PR or your changes. It gets back a narrated explainer, made on
-[DoomScroll](https://doomscroll.build)'s servers.
+Ask your coding agent for a video of your PR or your changes. It gets back a narrated explainer, made on the servers of
+DoomScroll ([doomscroll.build](https://doomscroll.build)), and a doomscroll.build link to watch it.
 
 ## Install
 
@@ -83,7 +83,7 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 | `POST /mcp` | The MCP server (Streamable HTTP; OAuth 2.1 with dynamic client registration and PKCE, or the key) |
 
 `doomscroll.mjs pr <PR> --comment` posts one PR comment with your own `gh` right after submitting: the `previewUrl` GIF (a
-"cooking" animation until the video is ready, then its preview) linking to `watchUrl`; a re-run edits it, and it is skipped
+"cooking" animation until the video is ready, then its preview) linking to `watchUrl` ("▶ Watch on doomscroll.build"); a re-run edits it, and it is skipped
 when DoomScroll posts on the PR itself. `scripts/pr-video.sh [--pr <url>] [options]` runs that for the current branch's PR
 with `--publish --or-shareable --no-wait` (published on the PR when you can write to it and Stealth is off, else shareable
 with a "Play the MP4" link in the comment) and prints the watch link.
@@ -91,11 +91,11 @@ with a "Play the MP4" link in the comment) and prints the watch link.
 `doomscroll.mjs watermark <video>` adds the same watermark, outro and jingle to any video with your local ffmpeg (logo in
 `skills/doomscroll-video/assets/`).
 
-Every video answer carries `links` from the moment it is queued: where the video will be (`watchUrl` its DoomScroll page, `previewUrl` the public silent GIF, `shareUrl` the public MP4 when sharing is on). They go live when it is done, so a workflow can pass them on without waiting.
+Every video answer carries `links` from the moment it is queued: where the video will be. `watchUrl` is the page to show the user as a clickable link: `https://doomscroll.build/watch/<token>`, which anyone holding the link can watch without signing in (an unlisted video: a published PR video or one shared by link), else the sign-in gated card for a private video; `appUrl` is always the in-app card (`/?pr=…` or `/?local=…`); `previewUrl` is the public silent GIF; `shareUrl` the raw public MP4 when sharing is on. They go live when it is done (until then the watch page says the video is still cooking), so a workflow can pass them on without waiting.
 
 `publish`: PR-only explicit opt-in, default `false`. Repeating a completed private request with publication enabled reuses its saved video without another render or credit. This does not enable public MP4 sharing. Installing the MCP server or the skill alone does not submit PRs; only the Claude Code plugin's hooks do, and `auto off` stops them.
 
-`shareable`: local changes default `true`; PR videos default `false`. The stable `video.shareUrl` contains a random 128-bit locator. Change it later with `doomscroll.mjs share <id>` / `unshare <id>` or `set_video_sharing`. `screens`: up to 4 `{caption, image}` screenshots of the UI the change touches (image = a base64 data URL, PNG/JPEG/WebP ≤ 1.5 MB); the video cuts to each one. `theme`: `classic` (default), `football` or `kpop`. `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
+`shareable`: local changes default `true`; PR videos default `false`. Shared, `watchUrl` is its unlisted watch page and the stable `video.shareUrl` its MP4, both keyed by a random 128-bit locator. Change it later with `doomscroll.mjs share <id>` / `unshare <id>` or `set_video_sharing`. `screens`: up to 4 `{caption, image}` screenshots of the UI the change touches (image = a base64 data URL, PNG/JPEG/WebP ≤ 1.5 MB); the video cuts to each one. `theme`: `classic` (default), `football` or `kpop`. `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
 your DoomScroll setting). `notes`: `summary`, `why`, `howItWorks`, `architecture`, `risks`, `audience` (text), `flows`
 (≤ 10 strings) and `components` (≤ 20 of `{name, kind, role?, change?, tech?}`); the skill explains each field.
 
@@ -144,9 +144,9 @@ attempts or deadlines (retry later; nothing is assumed done).
 |---|---|
 | `HEAD /api/agent/blobs/:sha256` | 200 complete, 204 partial, 404 unknown to this account; `Upload-Offset`, `Upload-Length`, `Upload-Complete` headers |
 | `PUT /api/agent/blobs/:sha256` | Raw `application/octet-stream`, `Content-Range: bytes start-end/total`, parts up to 64 MiB; `{sha256,bytes,offset,complete}` |
-| `POST /api/agent/items` | `{item:{key,title,description?,tags?},manifest,entry,kind,revision?,panels?,panelBlobs?,request?,postedAt?,source?}`; `kind` is video/audio/image/html/text/url; answers `{submissionId,itemKey,itemId,mediaId,revision,duplicate,links,state}` |
+| `POST /api/agent/items` | `{item:{key,title,description?,tags?},manifest,entry,kind,revision?,panels?,panelBlobs?,request?,postedAt?,source?}`; `kind` is video/audio/image/html/text/url; answers `{submissionId,itemKey,itemId,mediaId,revision,duplicate,links,state}`; `links.watchUrl` is the item's doomscroll.build page (`/?item=<key>&owner=<you>`, sign-in gated): show it to the user |
 | `POST /api/agent/items/:id/follow` | `{source:{tmuxSession,tmuxPane,cwd}}`; explicitly bind this session to future feedback on current bytes; answers `{item,revision,following:true,state,done}` |
-| `GET /api/agent/items/:id` | `{item}` with revisions, media, responses and derived pending/accepted/blocked state |
+| `GET /api/agent/items/:id` | `{item}` with revisions, media, responses, derived pending/accepted/blocked state and `links.watchUrl` |
 | `GET /api/agent/items?tags=a,b&project=demo` | `{items}`; tags use AND |
 | `PUT /api/agent/items/:id/tags` | `{tags:["a","b"]}`; answers `{item}` |
 | `PUT /api/agent/projects/:name` | `{verdicts:[{id,label,emoji?,tone}]}`; tone accept/revise/reject; answers `{project:{name,verdicts}}` |
