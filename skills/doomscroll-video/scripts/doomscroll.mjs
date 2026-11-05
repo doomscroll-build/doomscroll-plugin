@@ -37,7 +37,7 @@ const HELP = `Usage:
   doomscroll.mjs watermark <video> [--out <file.mp4>] [--jingle <audio> --jingle-start <s>] [--threads <n>]   Brand any video: DoomScroll mark at the bottom right + a short outro (needs ffmpeg)
 
 Options:
-  --theme classic|football|kpop   Video style (default classic)
+  --theme classic                 Video style (classic is the only one)
   --language <id>                 en ar es fr de pt tr hi id ja ko zh (default: your DoomScroll setting, else en)
   --notes <file.json|->           Your write-up of the change: components, architecture, how it works (see SKILL.md)
   --screen <image>=<caption>      A screenshot of the UI the change touches (repeat, up to 4), e.g. --screen before.png="Before: no bell"
@@ -331,7 +331,7 @@ const args = parseArgs(process.argv.slice(2))
 const [command, target] = args._
 if (args.help || !command) { process.stdout.write(`${HELP}\n`); process.exit(command || args.help ? 0 : 1) }
 const theme = args.theme || 'classic'
-if (!['classic', 'football', 'kpop'].includes(theme)) fail('--theme must be classic, football or kpop')
+if (theme !== 'classic') fail('--theme must be classic')
 const LANGUAGES = ['en', 'ar', 'es', 'fr', 'de', 'pt', 'tr', 'hi', 'id', 'ja', 'ko', 'zh']
 if (args.language && !LANGUAGES.includes(args.language)) fail(`--language must be one of ${LANGUAGES.join(' ')}`)
 if (args.publish && args.noPublish) fail('choose --publish or --no-publish, not both')

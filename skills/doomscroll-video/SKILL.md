@@ -111,8 +111,6 @@ answers:
   `pt` Portuguese, `tr` Turkish, `hi` Hindi, `id` Indonesian, `ja` Japanese, `ko` Korean, `zh` Chinese. Without an
   answer, leave `--language` off and DoomScroll uses the user's own setting (English by default). If the user writes
   to you in another language, suggest that one.
-- **Skin**: `classic` (default, an animated review explainer, a few minutes), or `football` / `kpop` (AI-generated
-  footage, much slower). Use classic unless they ask.
 - **Sharing**: local-change videos default to an unguessable public MP4 link; PR videos default private. Use `--private` / `shareable: false` for confidential local work, or `--shareable` / `shareable: true` only when the user explicitly wants a public-by-link MP4. Posting a hosted link in the PR does not require public MP4 sharing. Sharing can be changed later without rerendering.
 - **Who will watch it** (reviewers on the team, a manager, new joiners), if it changes the depth.
 - Tell them once that the PR or diff and your notes go to DoomScroll and its AI providers, and ask whether any of it

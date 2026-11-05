@@ -12,7 +12,7 @@ The short version:
 
 1. Sign-in is `DOOMSCROLL_API_KEY`, or the browser sign-in saved by `node <path>/skills/doomscroll-video/scripts/doomscroll.mjs login`.
    Never print, log or store the key yourself. If the script says "not signed in", run `login` and show the user the link and code.
-2. Ask the user once for the video's language and skin, and tell them the PR or diff and your notes go to DoomScroll
+2. Ask the user once for the video's language, and tell them the PR or diff and your notes go to DoomScroll
    and its AI providers. Local videos default to an unguessable public link; use `--private` for confidential work. PR videos default private.
 3. Know what the video will be (the skill's "What the video will be": a 1–2 minute portrait walkthrough in chapters
    Currently → The change → After → Blast radius). Investigate the change and the system around it and write
