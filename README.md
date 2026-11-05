@@ -76,6 +76,7 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 | `GET /api/agent/videos/<id>` | Status/progress, `publish`, `shareable`, `links`, and when ready authenticated downloads |
 | `POST /api/agent/videos/<id>/sharing` `{"shareable": true|false}` | Enable or revoke its stable unguessable public MP4 link |
 | `GET /api/agent/events?since=<id>&limit=<n>` | What changed for this key's login after event `since` (exclusive; default 0, ≤ 500 per page), oldest first, as `{events: [{id, type, source, subject, time, task, media, data}]}`: `task.queued` / `task.stage` / `task.failed` / `task.succeeded` (`media` = the finished video's token) and `submission.created` (`data.duplicate`). Events are kept 30 days; `410 {resync: true}` means `since` is older than what is kept, so re-read your videos and continue from the newest id |
+| `POST /api/agent/items` `{"item": {"key": "ext:<project>/<id>", "title", "description"?, "tags"?}, "text" \| "url": {"url", "excerpt"?}, "request"?, "postedAt"?, "source"?}` | A Markdown or link review card (≤ 256 KiB) for any key owner; `doomscroll.mjs push` sends these. Same key = same card; unchanged content answers `duplicate` with no new revision |
 | `GET /api/agent/me` | The key's GitHub login, credits and `connection` (`automatic`: the GitHub App makes your PR videos by itself; `installations`, `finished`, `failed`, `connectUrl`) |
 | `POST /api/agent/github` `{"text"}` | The user's GitHub CLI tokens (`gh auth status --show-token` output, sent by `doomscroll.mjs gh` after the user agrees), so DoomScroll reads orgs where the App is not installed; answers `{connected, skipped}` |
 | `POST /api/agent/v1/audio/speech`, `POST /api/agent/v1/audio/transcriptions` | OpenAI-compatible voice, metered in credits |
@@ -87,6 +88,21 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 when DoomScroll posts on the PR itself. `scripts/pr-video.sh [--pr <url>] [options]` runs that for the current branch's PR
 with `--publish --or-shareable --no-wait` (published on the PR when you can write to it and Stealth is off, else shareable
 with a "Play the MP4" link in the comment) and prints the watch link.
+
+## Your inbox in DoomScroll
+
+Your agent already reads your email, chat, docs and tickets. The `doomscroll-inbox` skill has it collect what needs you,
+push each item to DoomScroll as a short card, and then do exactly what you comment there (reply, accept, mark done),
+with its own tools. Ask it: *Sync my inbox to DoomScroll* (or run that on `/loop 30m`).
+
+```sh
+node doomscroll.mjs push inbox.jsonl   # or - for stdin; one {"app","id","title","summary","url"?,"from"?,"at"?,"tags"?,"request"?} per line
+```
+
+Each line becomes a Markdown card keyed `ext:<app>/<id>` in project `<app>`, so a re-push updates the same card and
+unchanged content is no new revision. Every line is checked before anything is sent; each item prints
+`{"key","id","revision","status":"stored"|"unchanged","state","watchUrl"}`. Your comments come back through
+`item events` (`source` `user:…` is you; the agent's own replies are `api:…`). DoomScroll never reads those accounts itself.
 
 `doomscroll.mjs watermark <video>` adds the same watermark, outro and jingle to any video with your local ffmpeg (logo in
 `skills/doomscroll-video/assets/`).
@@ -106,7 +122,8 @@ MIT, see [LICENSE](LICENSE).
 
 ## Stored review items
 
-Allow-listed accounts can post video, audio, image, HTML bundles, text, and URL cards without rendering them.
+Any account can post text and URL cards (`push` above); allow-listed accounts can also upload video, audio, image and
+HTML bundles, all without rendering them.
 The JSON file is the `POST /api/agent/items` body. Its `manifest` maps relative file paths to
 SHA-256 hashes; files live relative to that JSON file. `panelBlobs` uses the same format.
 The client uploads missing bytes in resumable parts, verifies local hashes, then submits.

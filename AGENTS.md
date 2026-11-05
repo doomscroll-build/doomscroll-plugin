@@ -27,3 +27,10 @@ The short version:
    App installation is needed. Repository write access and Stealth mode off are required. Without this opt-in, requests stay private.
 6. Never upload DoomScroll MP4s to GitHub or write a separate `gh pr comment` publication path. All videos stay on DoomScroll.
    Submit the video for real and track its returned job id. When the user asked for it, add `--open` and still print the link and MP4 path.
+
+# DoomScroll inbox
+
+When the user asks to sync their inbox, notifications or to-dos to DoomScroll, or to act on their DoomScroll comments,
+follow `skills/doomscroll-inbox/SKILL.md`. In short: collect what needs the user with the tools you already have, write
+one `{"app","id","title","summary",...}` JSON line per item, run `node <path>/skills/doomscroll-video/scripts/doomscroll.mjs push inbox.jsonl`,
+then read `item events --since <cursor>` and do only what a `user:` comment explicitly asks, never on your own initiative.

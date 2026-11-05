@@ -25,6 +25,14 @@ const HELP = `Usage:
   doomscroll.mjs item tags <id> a,b
   doomscroll.mjs item project <slug> <scheme.json>   Set a project's verdict scheme ({"verdicts":[{id,label,tone,emoji?}]})
   doomscroll.mjs item events [--since <seq>] [--limit <n>]   Your change log after a sequence number (raw API JSON); exit 6 when the cursor was swept
+  doomscroll.mjs push [file.jsonl|-]          Push things that need you (emails, mentions, tickets...) as review cards; stdin by default.
+                                               One JSON object per line: {"app","id","title","summary", "url"?, "from"?, "at"?, "tags"?, "request"?}
+                                               app = lowercase slug (gmail, slack, google-drive); the card key is ext:<app>/<id>, so a
+                                               re-push updates it and unchanged content is no new revision. summary is Markdown; url adds
+                                               "Open in <App>"; at (ISO time of the latest activity, default now) orders the feed, and new
+                                               content replaces the card only with a newer at; request defaults to true (false = FYI).
+                                               Every line is checked before anything is sent. Prints one line per item:
+                                               {"key","id","revision","status":"stored"|"unchanged","state","watchUrl"}
   doomscroll.mjs status <id>
   doomscroll.mjs download <id> [--out <file.mp4>] [--gif <file.gif>]
   doomscroll.mjs video-comment <owner/repo#number | PR URL> --attachment <https://github.com/user-attachments/assets/…>
@@ -538,6 +546,58 @@ async function itemCommand(action, args) {
   return stored
 }
 
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const PUSH_FIELDS = ['app', 'id', 'title', 'summary', 'url', 'from', 'at', 'tags', 'request']
+const ISO_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|[+-]\d\d:\d\d)$/
+/** One `push` line as the stored-item text card it becomes; throws a message naming what is wrong. */
+function pushCard(line) {
+  const value = JSON.parse(line)
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('must be a JSON object')
+  const unknown = Object.keys(value).find(field => !PUSH_FIELDS.includes(field))
+  if (unknown) throw new Error(`unknown field "${unknown}" (allowed: ${PUSH_FIELDS.join(', ')})`)
+  const text = (field, max, required = false) => {
+    if (value[field] === undefined && !required) return undefined
+    if (typeof value[field] !== 'string' || !value[field].trim() || value[field].length > max) throw new Error(`${field} must be a non-empty string of at most ${max} characters`)
+    return value[field].trim()
+  }
+  const app = text('app', 100, true), id = text('id', 500, true), title = text('title', 500, true), summary = text('summary', 200_000, true), from = text('from', 200)
+  if (!SLUG.test(app)) throw new Error('app must be a lowercase slug such as gmail or google-drive')
+  if ([...id].some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new Error('id must not contain control characters')
+  let link
+  if (value.url !== undefined) {
+    try { link = new URL(text('url', 4000)) } catch { /* refused below */ }
+    if (!link || !['https:', 'http:'].includes(link.protocol) || link.username || link.password) throw new Error('url must be an http(s) link without credentials')
+  }
+  if (value.at !== undefined && (typeof value.at !== 'string' || !ISO_TIME.test(value.at) || !Number.isFinite(Date.parse(value.at)))) throw new Error('at must be an ISO time with a zone, e.g. 2026-11-05T09:30:00Z')
+  if (value.tags !== undefined && (!Array.isArray(value.tags) || value.tags.length > 50 || !value.tags.every(tag => typeof tag === 'string' && tag.length <= 100 && SLUG.test(tag)))) throw new Error('tags must be at most 50 lowercase slugs')
+  if (value.request !== undefined && typeof value.request !== 'boolean') throw new Error('request must be true or false')
+  const name = app.split('-').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')
+  const card = [from && `**From:** ${from}`, summary, link && `[Open in ${name}](<${link.href}>)`].filter(Boolean).join('\n\n')
+  if (Buffer.byteLength(card, 'utf8') > 256 * 1024) throw new Error('the card is over 256 KiB')
+  return { item: { key: `ext:${app}/${id}`, title, ...(value.tags ? { tags: value.tags } : {}) }, text: card, request: value.request ?? true, ...(value.at ? { postedAt: value.at } : {}) }
+}
+
+/** `push`: every line is checked first, then each card is stored once through the item API (same key = same card). */
+async function push(file) {
+  let input
+  try { input = readFileSync(file === undefined || file === '-' ? 0 : file, 'utf8') } catch (error) { fail(`cannot read ${file ?? 'stdin'}: ${error.message}`) }
+  const cards = [], keys = new Set()
+  input.split('\n').forEach((line, index) => {
+    if (!line.trim()) return
+    let card
+    try { card = pushCard(line) } catch (error) { fail(`line ${index + 1}: ${error.message}`) }
+    if (keys.has(card.item.key)) fail(`line ${index + 1}: ${card.item.key} appears twice`)
+    keys.add(card.item.key)
+    cards.push(card)
+  })
+  if (!cards.length) fail('nothing to push: give one JSON object per line, in a file or on stdin')
+  const context = sessionSource()
+  for (const card of cards) {
+    const stored = await call('/api/agent/items', { ...card, ...context })
+    process.stdout.write(`${JSON.stringify({ key: stored.itemKey, id: stored.itemId, revision: stored.revision, status: stored.duplicate ? 'unchanged' : 'stored', state: stored.state, watchUrl: stored.links.watchUrl })}\n`)
+  }
+}
+
 /**
  * What the server has of this blob: `complete`, or the verified offset the next part must start at (0 when unknown).
  * The three upload headers must all be present and consistent with this file (a missing Upload-Offset is not 0): anything
@@ -590,6 +650,7 @@ async function uploadBlob(endpoint, path, size, part) {
 }
 
 if (command === 'item') process.stdout.write(`${JSON.stringify(await itemCommand(target, args))}\n`)
+else if (command === 'push') await push(target)
 else if (command === 'login') await login()
 else if (command === 'logout') { try { const all = JSON.parse(readFileSync(CREDENTIALS, 'utf8')); delete all[origin]; Object.keys(all).length ? writeFileSync(CREDENTIALS, JSON.stringify(all, null, 2), { mode: 0o600 }) : rmSync(CREDENTIALS) } catch { /* nothing saved */ } process.stdout.write(`${JSON.stringify({ signedOut: true })}\n`) }
 else if (command === 'speak') await speak(target, args)
