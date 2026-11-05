@@ -1,9 +1,9 @@
 {
   "name": "doomscroll",
-  "displayName": "DoomScroll",
+  "displayName": "DoomScroll.build",
   "version": "0.6.0",
-  "description": "Make a short narrated video that explains a pull request or your local changes, from your coding agent, and automatically for every PR you open or push. Push what needs you from email, chat, docs and tickets into your DoomScroll feed and act on your comments.",
-  "author": { "name": "DoomScroll", "url": "https://doomscroll.build" },
+  "description": "Make a short narrated video that explains a pull request or your local changes, from your coding agent, and automatically for every PR you open or push. Push what needs you from email, chat, docs and tickets into your DoomScroll.build feed and act on your comments.",
+  "author": { "name": "DoomScroll.build", "url": "https://doomscroll.build" },
   "homepage": "https://doomscroll.build",
   "license": "MIT",
   "keywords": ["pull-request", "code-review", "video", "explainer"]

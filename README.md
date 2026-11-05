@@ -1,7 +1,7 @@
-# DoomScroll for coding agents
+# DoomScroll.build for coding agents
 
 Ask your coding agent for a video of your PR or your changes. It gets back a narrated explainer, made on the servers of
-DoomScroll ([doomscroll.build](https://doomscroll.build)), and a doomscroll.build link to watch it.
+[DoomScroll.build](https://doomscroll.build), and a link to watch it there.
 
 ## Install
 
@@ -13,7 +13,7 @@ npx --yes skills add doomscroll-build/doomscroll-plugin -g -y -a claude-code
 
 Works with Claude Code, Codex, Cursor, Gemini CLI and [more](https://skills.sh). Then ask your agent:
 
-> Make a DoomScroll video of my changes
+> Make a DoomScroll.build video of my changes
 
 The first time, one page opens in your browser: sign in with GitHub and click Approve. You get 5 free videos a day.
 
@@ -25,9 +25,9 @@ one-page sign-in): `npx --yes plugins add doomscroll-build/doomscroll-plugin -y`
 
 The plugin adds three small hooks. They only add a line of context for your agent: they call nothing and send nothing themselves.
 
-- **After `gh pr create` or a `git push` to a branch with an open PR**, your agent makes that PR's video in the background with `scripts/pr-video.sh` (one credit, never twice for the same commit), posts one PR comment from your own `gh` whose GIF shows "cooking" until the video is ready, and gives you the link. If the DoomScroll GitHub App already makes your PR videos, the agent just hands you that video's link and nothing is charged.
+- **After `gh pr create` or a `git push` to a branch with an open PR**, your agent makes that PR's video in the background with `scripts/pr-video.sh` (one credit, never twice for the same commit), posts one PR comment from your own `gh` whose GIF shows "cooking" until the video is ready, and gives you the link. If the DoomScroll.build GitHub App already makes your PR videos, the agent just hands you that video's link and nothing is charged.
 - **After a long explanation**, it asks "Would you like to see this explanation as an animated video?"
-- **When you hand over a batch of tasks or overnight work**, it asks once whether to add the results to your DoomScroll feed as videos.
+- **When you hand over a batch of tasks or overnight work**, it asks once whether to add the results to your DoomScroll.build feed as videos.
 
 When you ask for a video yourself, it opens in your browser, and the agent also prints the link and the MP4's path. Turn the automatic part off with
 `node <skill>/scripts/doomscroll.mjs auto off` (or `DOOMSCROLL_AUTO=0`); `auto on` brings it back. The skill alone (`npx skills add`) has no hooks.
@@ -36,7 +36,7 @@ When you ask for a video yourself, it opens in your browser, and the agent also 
 
 Optional and separate from the skill, for clients without a terminal. One URL, `https://doomscroll.build/mcp`; your client opens a browser to sign in with GitHub (OAuth, no key to paste).
 
-- **Claude (web, desktop, mobile)**: [**Add to Claude**](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=DoomScroll&connectorUrl=https%3A%2F%2Fdoomscroll.build%2Fmcp) (opens Claude's connector dialog already filled in: click Add, then Connect)
+- **Claude (web, desktop, mobile)**: [**Add to Claude**](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=DoomScroll.build&connectorUrl=https%3A%2F%2Fdoomscroll.build%2Fmcp) (opens Claude's connector dialog already filled in: click Add, then Connect)
 - **Claude Code**: `claude mcp add --transport http --scope user doomscroll https://doomscroll.build/mcp`, then `/mcp` to sign in
 - **Codex**: in `~/.codex/config.toml` add `[mcp_servers.doomscroll]` with `url = "https://doomscroll.build/mcp"`, then `codex mcp login doomscroll`
 - **Gemini CLI**: `gemini mcp add -s user --transport http doomscroll https://doomscroll.build/mcp`, then `/mcp auth doomscroll`
@@ -53,15 +53,15 @@ Send `Authorization: Bearer <key>` with a key from Settings → Agent access.
 1. Your agent reads the change and the code around it, and writes notes: every component, how they connect, what
    changed and what could break. For a change you can see, it walks through the real UI and captures before/after
    screenshots (a screen recording becomes up to 4 key frames).
-2. DoomScroll turns the PR or diff plus the notes and screenshots into a 1–2 minute portrait video, in any of 12 languages:
+2. DoomScroll.build turns the PR or diff plus the notes and screenshots into a 1–2 minute portrait video, in any of 12 languages:
    one animated diagram of the real components, in four chapters (Currently → The change → After → Blast radius), cutting
    to your screenshots, ending on what merging means.
-3. Your agent downloads the MP4, or explicitly requests PR publication with `publish: true` / `--publish`. DoomScroll posts
+3. Your agent downloads the MP4, or explicitly requests PR publication with `publish: true` / `--publish`. DoomScroll.build posts
    status, its hosted preview/link and failure guidance using your GitHub account. No organization App installation is needed.
    Default requests remain private. Stealth mode must be off and repository write access is required. Videos are never uploaded to GitHub.
 
-Each video costs one credit, refunded if it fails. The PR or diff and the notes are sent to DoomScroll and its AI
-providers, so don't send code you can't share with them. Revoke access any time in DoomScroll **Settings → Agent
+Each video costs one credit, refunded if it fails. The PR or diff and the notes are sent to DoomScroll.build and its AI
+providers, so don't send code you can't share with them. Revoke access any time in DoomScroll.build **Settings → Agent
 access**.
 
 ## API
@@ -71,29 +71,29 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 
 | Request | What it does |
 | --- | --- |
-| `POST /api/agent/videos` `{"pr": {"owner", "repo", "number", "sha"?}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?, "publish"?, "auto"?, "source"?: {"tmuxSession", "tmuxPane", "cwd"}}` | Video of a GitHub PR (default: its head commit; sharing defaults off). One video per PR commit: a published one (e.g. the DoomScroll bot's) or your own is returned instead of a new one, at no charge. `auto: true` (you are making it unasked) answers `200 {"video": null, "automatic": true, "watchUrl"}` when the GitHub App will make it. With `screens` it makes and publishes the video itself instead, replacing the App's screenless one of that commit. `automatic: false` plus `connectUrl` means GitHub is not connected for automatic videos |
+| `POST /api/agent/videos` `{"pr": {"owner", "repo", "number", "sha"?}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?, "publish"?, "auto"?, "source"?: {"tmuxSession", "tmuxPane", "cwd"}}` | Video of a GitHub PR (default: its head commit; sharing defaults off). One video per PR commit: a published one (e.g. the DoomScroll.build bot's) or your own is returned instead of a new one, at no charge. `auto: true` (you are making it unasked) answers `200 {"video": null, "automatic": true, "watchUrl"}` when the GitHub App will make it. With `screens` it makes and publishes the video itself instead, replacing the App's screenless one of that commit. `automatic: false` plus `connectUrl` means GitHub is not connected for automatic videos |
 | `POST /api/agent/videos` `{"change": {"title", "description"?, "diff", "repo"?, "files"?: [{"path", "content"}]}, "theme"?, "language"?, "notes"?, "screens"?, "shareable"?, "source"?: {"tmuxSession", "tmuxPane", "cwd"}}` | Video of a unified diff (sharing defaults on; ≤ 600 KB, ≤ 300 files, ≤ 40 excerpts of ≤ 100 KB). `source` (sent by the client inside tmux) is where comments on the video can be delivered |
 | `GET /api/agent/videos/<id>` | Status/progress, `publish`, `shareable`, `links`, and when ready authenticated downloads |
 | `POST /api/agent/videos/<id>/sharing` `{"shareable": true|false}` | Enable or revoke its stable unguessable public MP4 link |
 | `GET /api/agent/events?since=<id>&limit=<n>` | What changed for this key's login after event `since` (exclusive; default 0, ≤ 500 per page), oldest first, as `{events: [{id, type, source, subject, time, task, media, data}]}`: `task.queued` / `task.stage` / `task.failed` / `task.succeeded` (`media` = the finished video's token) and `submission.created` (`data.duplicate`). Events are kept 30 days; `410 {resync: true}` means `since` is older than what is kept, so re-read your videos and continue from the newest id |
 | `POST /api/agent/items` `{"item": {"key": "ext:<project>/<id>", "title", "description"?, "tags"?}, "text" \| "url": {"url", "excerpt"?}, "request"?, "postedAt"?, "source"?}` | A Markdown or link review card (≤ 256 KiB) for any key owner; `doomscroll.mjs push` sends these. Same key = same card; unchanged content answers `duplicate` with no new revision |
 | `GET /api/agent/me` | The key's GitHub login, credits and `connection` (`automatic`: the GitHub App makes your PR videos by itself; `installations`, `finished`, `failed`, `connectUrl`) |
-| `POST /api/agent/github` `{"text"}` | The user's GitHub CLI tokens (`gh auth status --show-token` output, sent by `doomscroll.mjs gh` after the user agrees), so DoomScroll reads orgs where the App is not installed; answers `{connected, skipped}` |
+| `POST /api/agent/github` `{"text"}` | The user's GitHub CLI tokens (`gh auth status --show-token` output, sent by `doomscroll.mjs gh` after the user agrees), so DoomScroll.build reads orgs where the App is not installed; answers `{connected, skipped}` |
 | `POST /api/agent/v1/audio/speech`, `POST /api/agent/v1/audio/transcriptions` | OpenAI-compatible voice, metered in credits |
 | `POST /api/agent/device`, `POST /api/agent/device/token` | Browser sign-in by device code |
 | `POST /mcp` | The MCP server (Streamable HTTP; OAuth 2.1 with dynamic client registration and PKCE, or the key) |
 
 `doomscroll.mjs pr <PR> --comment` posts one PR comment with your own `gh` right after submitting: the `previewUrl` GIF (a
 "cooking" animation until the video is ready, then its preview) linking to `watchUrl` ("▶ Watch on doomscroll.build"); a re-run edits it, and it is skipped
-when DoomScroll posts on the PR itself. `scripts/pr-video.sh [--pr <url>] [options]` runs that for the current branch's PR
+when DoomScroll.build posts on the PR itself. `scripts/pr-video.sh [--pr <url>] [options]` runs that for the current branch's PR
 with `--publish --or-shareable --no-wait` (published on the PR when you can write to it and Stealth is off, else shareable
 with a "Play the MP4" link in the comment) and prints the watch link.
 
-## Your inbox in DoomScroll
+## Your inbox in DoomScroll.build
 
 Your agent already reads your email, chat, docs and tickets. The `doomscroll-inbox` skill has it collect what needs you,
-push each item to DoomScroll as a short card, and then do exactly what you comment there (reply, accept, mark done),
-with its own tools. Ask it: *Sync my inbox to DoomScroll* (or run that on `/loop 30m`).
+push each item to DoomScroll.build as a short card, and then do exactly what you comment there (reply, accept, mark done),
+with its own tools. Ask it: *Sync my inbox to DoomScroll.build* (or run that on `/loop 30m`).
 
 ```sh
 node doomscroll.mjs push inbox.jsonl   # or - for stdin; one {"app","id","title","summary","url"?,"from"?,"at"?,"tags"?,"request"?} per line
@@ -102,7 +102,7 @@ node doomscroll.mjs push inbox.jsonl   # or - for stdin; one {"app","id","title"
 Each line becomes a Markdown card keyed `ext:<app>/<id>` in project `<app>`, so a re-push updates the same card and
 unchanged content is no new revision. Every line is checked before anything is sent; each item prints
 `{"key","id","revision","status":"stored"|"unchanged","state","watchUrl"}`. Your comments come back through
-`item events` (`source` `user:…` is you; the agent's own replies are `api:…`). DoomScroll never reads those accounts itself.
+`item events` (`source` `user:…` is you; the agent's own replies are `api:…`). DoomScroll.build never reads those accounts itself.
 
 `doomscroll.mjs watermark <video>` adds the same watermark, outro and jingle to any video with your local ffmpeg (logo in
 `skills/doomscroll-video/assets/`).
@@ -112,7 +112,7 @@ Every video answer carries `links` from the moment it is queued: where the video
 `publish`: PR-only explicit opt-in, default `false`. Repeating a completed private request with publication enabled reuses its saved video without another render or credit. This does not enable public MP4 sharing. Installing the MCP server or the skill alone does not submit PRs; only the Claude Code plugin's hooks do, and `auto off` stops them.
 
 `shareable`: local changes default `true`; PR videos default `false`. Shared, `watchUrl` is its unlisted watch page and the stable `video.shareUrl` its MP4, both keyed by a random 128-bit locator. Change it later with `doomscroll.mjs share <id>` / `unshare <id>` or `set_video_sharing`. `screens`: up to 4 `{caption, image}` screenshots of the UI the change touches (image = a base64 data URL, PNG/JPEG/WebP ≤ 1.5 MB); the video cuts to each one. `theme`: `classic` (the default and only skin; omit it). `language`: one of `en ar es fr de pt tr hi id ja ko zh` (default:
-your DoomScroll setting). `notes`: `summary`, `why`, `howItWorks`, `architecture`, `risks`, `audience` (text), `flows`
+your DoomScroll.build setting). `notes`: `summary`, `why`, `howItWorks`, `architecture`, `risks`, `audience` (text), `flows`
 (≤ 10 strings) and `components` (≤ 20 of `{name, kind, role?, change?, tech?}`); the skill explains each field.
 
 ## License

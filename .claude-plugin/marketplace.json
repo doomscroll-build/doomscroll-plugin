@@ -1,7 +1,7 @@
 {
   "name": "doomscroll",
-  "description": "DoomScroll: narrated pull request explainer videos from your coding agent",
-  "owner": { "name": "DoomScroll", "url": "https://doomscroll.build" },
+  "description": "DoomScroll.build: narrated pull request explainer videos from your coding agent",
+  "owner": { "name": "DoomScroll.build", "url": "https://doomscroll.build" },
   "plugins": [
     {
       "name": "doomscroll",

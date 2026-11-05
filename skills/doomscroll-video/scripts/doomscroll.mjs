@@ -40,36 +40,36 @@ const HELP = `Usage:
   doomscroll.mjs share <id>                     Enable its public watch page (no sign-in) and public MP4 URL
   doomscroll.mjs unshare <id>                   Disable its public watch page and MP4 URL
   doomscroll.mjs me
-  doomscroll.mjs gh                            Let DoomScroll read your PRs with your GitHub CLI sign-in (ask the user first)
+  doomscroll.mjs gh                            Let DoomScroll.build read your PRs with your GitHub CLI sign-in (ask the user first)
   doomscroll.mjs auto on|off|status          Automatic PR videos and video offers in Claude Code (the plugin's hooks; default on)
-  doomscroll.mjs watermark <video> [--out <file.mp4>] [--jingle <audio> --jingle-start <s>] [--threads <n>]   Brand any video: DoomScroll mark at the bottom right + a short outro (needs ffmpeg)
+  doomscroll.mjs watermark <video> [--out <file.mp4>] [--jingle <audio> --jingle-start <s>] [--threads <n>]   Brand any video: DoomScroll.build mark at the bottom right + a short outro (needs ffmpeg)
 
 Options:
   --theme classic                 Video style (classic is the only one)
-  --language <id>                 en ar es fr de pt tr hi id ja ko zh (default: your DoomScroll setting, else en)
+  --language <id>                 en ar es fr de pt tr hi id ja ko zh (default: your DoomScroll.build setting, else en)
   --notes <file.json|->           Your write-up of the change: components, architecture, how it works (see SKILL.md)
   --screen <image>=<caption>      A screenshot of the UI the change touches (repeat, up to 4), e.g. --screen before.png="Before: no bell"
   --publish                      PR only: post progress, failures and the hosted video link
-  --no-publish                   Keep the video private to DoomScroll (default)
+  --no-publish                   Keep the video private to DoomScroll.build (default)
   --shareable                    Enable a stable unguessable public MP4 link
   --private                      Disable the public MP4 link (local defaults shared; PR defaults private)
   --out <file.mp4>                Where to save the video (default doomscroll-<id>.mp4)
   --gif <file.gif>                Also save the silent GIF preview
-  --or-shareable                  With --publish: when DoomScroll cannot publish (no write access, Stealth on), make it shareable instead
+  --or-shareable                  With --publish: when DoomScroll.build cannot publish (no write access, Stealth on), make it shareable instead
   --comment                       PR only: post one PR comment with your own gh right after submitting: the preview GIF (a
-                                  "cooking" animation until the video is ready) linking to DoomScroll; a re-run edits it
+                                  "cooking" animation until the video is ready) linking to DoomScroll.build; a re-run edits it
   --auto                          PR only: you are making it on your own (after a push), not because the user asked; when the
-                                  DoomScroll GitHub App makes this PR's videos already, nothing is queued and its link is printed
-  --open                          Open the finished video in the browser (its DoomScroll page, else the share link, else the MP4)
+                                  DoomScroll.build GitHub App makes this PR's videos already, nothing is queued and its link is printed
+  --open                          Open the finished video in the browser (its DoomScroll.build page, else the share link, else the MP4)
   --no-wait                       Submit and print the id and the links the video will have, without waiting
   --timeout <minutes>             Give up waiting after this long (default 60)
 
 Sign-in (either one):
   doomscroll.mjs login   Opens a browser page; approve the code and the key is saved to ~/.config/doomscroll/credentials.json
-  DOOMSCROLL_API_KEY     A key from DoomScroll Settings -> Agent access (wins over the saved one)
+  DOOMSCROLL_API_KEY     A key from DoomScroll.build Settings -> Agent access (wins over the saved one)
 
-Voice for any OpenAI SDK: base URL <DOOMSCROLL_URL>/api/agent/v1 with the DoomScroll key as the API key
-(POST /audio/speech, POST /audio/transcriptions). Every call is paid in DoomScroll credits.
+Voice for any OpenAI SDK: base URL <DOOMSCROLL_URL>/api/agent/v1 with the DoomScroll.build key as the API key
+(POST /audio/speech, POST /audio/transcriptions). Every call is paid in DoomScroll.build credits.
 
 Environment:
   DOOMSCROLL_URL       Server origin (default https://doomscroll.build)
@@ -131,7 +131,7 @@ const CREDENTIALS = join(CONFIG, 'credentials.json'), SETTINGS = join(CONFIG, 's
 const saved = () => { try { return JSON.parse(readFileSync(CREDENTIALS, 'utf8'))[origin]?.apiKey } catch { return undefined } }
 const key = process.env.DOOMSCROLL_API_KEY || saved()
 const headers = () => {
-  if (!key) fail('not signed in. Run: doomscroll.mjs login (or export DOOMSCROLL_API_KEY from DoomScroll Settings -> Agent access).', 3)
+  if (!key) fail('not signed in. Run: doomscroll.mjs login (or export DOOMSCROLL_API_KEY from DoomScroll.build Settings -> Agent access).', 3)
   return { Authorization: `Bearer ${key}`, Accept: 'application/json' }
 }
 const bounded = (value, fallback, min, max) => { const n = Number(value); return value === undefined || value === '' ? fallback : Number.isFinite(n) && n >= min && n <= max ? Math.floor(n) : fail(`${value} is out of range ${min}..${max}`) }
@@ -432,11 +432,11 @@ const COMMENT_MARKER = '<!-- doomscroll-agent-video -->'
  * renders and the video's preview once it is ready, so it is posted at once. A re-run edits the user's earlier one (its marker).
  */
 function commentOnPr({ owner, repo, number }, video) {
-  if (video.publish) return { comment: 'skipped', commentReason: 'DoomScroll posts this video on the PR itself' }
+  if (video.publish) return { comment: 'skipped', commentReason: 'DoomScroll.build posts this video on the PR itself' }
   const { watchUrl, previewUrl, shareUrl } = video.links ?? {}
   if (!previewUrl) return { comment: 'skipped', commentReason: 'no preview link' }
   const shared = shareUrl ? ` · [Play the MP4](${shareUrl})` : ''
-  const body = `${COMMENT_MARKER}\n### 🎬 DoomScroll video of this PR\n\n[![DoomScroll video: it plays here when it is ready](${previewUrl})](${watchUrl})\n\n**[▶ Watch on ${host}](${watchUrl})**${shared}, a short narrated walkthrough of this pull request.\n\n<sub>🎬 10x your reviews! Watch your PRs as videos on [${host}](${origin}/)</sub>\n`
+  const body = `${COMMENT_MARKER}\n### 🎬 DoomScroll.build video of this PR\n\n[![DoomScroll.build video: it plays here when it is ready](${previewUrl})](${watchUrl})\n\n**[▶ Watch on ${host}](${watchUrl})**${shared}, a short narrated walkthrough of this pull request.\n\n<sub>🎬 10x your reviews! Watch your PRs as videos on [${host}](${origin}/)</sub>\n`
   const gh = (ghArgs, input) => execFileSync('gh', ghArgs, { input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
   try {
     const me = gh(['api', 'user', '--jq', '.login'])
@@ -463,9 +463,9 @@ function videoInComment({ owner, repo, number }, attachment) {
     const me = gh(['api', 'user', '--jq', '.login'])
     const mine = JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${owner}/${repo}/issues/${number}/comments`])).flat()
       .filter(comment => comment.user?.login === me && comment.body?.includes(COMMENT_MARKER)).at(-1)
-    if (!mine) fail('no DoomScroll comment of yours on this PR yet; run `pr … --comment` first')
+    if (!mine) fail('no DoomScroll.build comment of yours on this PR yet; run `pr … --comment` first')
     const player = /^(?:\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)|https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]{36})$/m
-    if (!player.test(mine.body)) fail('your DoomScroll comment has no preview to replace')
+    if (!player.test(mine.body)) fail('your DoomScroll.build comment has no preview to replace')
     const url = gh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/issues/comments/${mine.id}`, '--input', '-', '--jq', '.html_url'], JSON.stringify({ body: mine.body.replace(player, attachment) }))
     return { comment: url, video: 'uploaded' }
   } catch (error) {
@@ -705,7 +705,7 @@ else if (command === 'download') {
   const { video, credits, automatic, watchUrl, connectUrl } = answer?.data ?? await call('/api/agent/videos', body)
   if (!video) {
     // The DoomScroll GitHub App makes this PR's videos by itself: nothing was queued or charged.
-    log(`the DoomScroll GitHub App makes this PR's video automatically; nothing was queued. Watch it on ${host}: ${watchUrl}`)
+    log(`the DoomScroll.build GitHub App makes this PR's video automatically; nothing was queued. Watch it on ${host}: ${watchUrl}`)
     if (args.open) openInBrowser(watchUrl)
     process.stdout.write(`${JSON.stringify({ status: 'automatic', watchUrl })}\n`)
     process.exit(0)

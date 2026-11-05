@@ -1,12 +1,12 @@
 ---
 name: doomscroll-inbox
-description: Turn DoomScroll (https://doomscroll.build) into the user's one feed for everything that needs them. You collect what is waiting in the tools you already have (email, chat, docs, tickets, code review, calendar), push each item to DoomScroll as a short review card, then read the user's comments back and do exactly what they wrote, with your own tools. Use when the user asks to "sync my inbox to DoomScroll", to put their notifications, mentions or to-dos in DoomScroll, to act on their DoomScroll comments, or on a /loop schedule that does this.
+description: Turn DoomScroll.build into the user's one feed for everything that needs them. You collect what is waiting in the tools you already have (email, chat, docs, tickets, code review, calendar), push each item to DoomScroll.build as a short review card, then read the user's comments back and do exactly what they wrote, with your own tools. Use when the user asks to "sync my inbox to DoomScroll.build", to put their notifications, mentions or to-dos in DoomScroll.build, to act on their DoomScroll.build comments, or on a /loop schedule that does this.
 allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/../doomscroll-video/scripts/doomscroll.mjs *)
 ---
 
-# DoomScroll inbox
+# DoomScroll.build inbox
 
-The user reviews on DoomScroll; you do the legwork. DoomScroll never connects to their accounts here: you read them
+The user reviews on DoomScroll.build; you do the legwork. DoomScroll.build never connects to their accounts here: you read them
 with the tools this session already has (MCP servers, CLIs), and you act on them the same way.
 
 `ds` below means `node ${CLAUDE_SKILL_DIR}/../doomscroll-video/scripts/doomscroll.mjs` (the `doomscroll-video` skill
@@ -23,7 +23,7 @@ Look only where you already have access, and only at what needs the user now:
 - meeting invites they have not answered
 
 Skip newsletters, notifications they already handled and anything they only follow. Tell the user which sources you
-checked; never ask for passwords or tokens, and never send credentials or raw message dumps to DoomScroll.
+checked; never ask for passwords or tokens, and never send credentials or raw message dumps to DoomScroll.build.
 
 ## 2. Push
 
@@ -45,7 +45,7 @@ Write one JSON object per line to `inbox.jsonl`:
 
 Then run `ds push inbox.jsonl`. Every line is checked first; a bad line stops the whole push and names it. Each item
 prints `{"key","id","revision","status","state","watchUrl"}`. Keep `key → id` in the cursor file (below) and give the
-user one link to open DoomScroll.
+user one link to open DoomScroll.build.
 
 ## 3. Read the user's feedback
 
@@ -54,9 +54,9 @@ State lives in `~/.config/doomscroll/inbox.json`: `{"since": <last event id>, "i
 
 Run `ds item events --since <since> --limit 500`, again from the last id until a page is empty. Look only at events with
 `type` `response.created`, a `subject` among your `items` keys (`ext:<app>/<id>`, so you know the source item), and a
-`source` starting with `user:`: that is the user in DoomScroll. `api:` and `session:` sources are you or another agent;
+`source` starting with `user:`: that is the user in DoomScroll.build. `api:` and `session:` sources are you or another agent;
 ignore them. `data.kind` is `comment`, `approve`, `done` or `like`; `data.text` is what the user wrote. Save the last
-event id as `since` once they are handled. Exit code 6 means the cursor is older than what DoomScroll keeps: check your
+event id as `since` once they are handled. Exit code 6 means the cursor is older than what DoomScroll.build keeps: check your
 cards with `ds item get <id>` and continue from the id the message names.
 
 ## 4. Act, only as told
@@ -75,5 +75,5 @@ so in your reply.
 
 ## On a schedule
 
-With `/loop 30m sync my inbox to DoomScroll`, each run does steps 1–4: push what is new, then act on new comments.
+With `/loop 30m sync my inbox to DoomScroll.build`, each run does steps 1–4: push what is new, then act on new comments.
 Stop if `ds` exits 3 (signed out) and tell the user.
