@@ -23,7 +23,7 @@ one-page sign-in): `npx --yes plugins add doomscroll-build/doomscroll-plugin -y`
 
 ### Automatic videos (the Claude Code plugin)
 
-The plugin adds three small hooks. They only add a line of context for your agent: they call nothing and send nothing themselves.
+The plugin adds three small hooks. They only add a line of context for your agent: they call nothing and send nothing themselves. A fourth, opt-in hook answers Claude's questions from your feed (below).
 
 - **After `gh pr create` or a `git push` to a branch with an open PR**, your agent makes that PR's video in the background with `scripts/pr-video.sh` (one credit, never twice for the same commit), posts one PR comment from your own `gh` whose GIF shows "cooking" until the video is ready, and gives you the link. If the DoomScroll.build GitHub App already makes your PR videos, the agent just hands you that video's link and nothing is charged.
 - **After a long explanation**, it asks "Would you like to see this explanation as an animated video?"
@@ -31,6 +31,14 @@ The plugin adds three small hooks. They only add a line of context for your agen
 
 When you ask for a video yourself, it opens in your browser, and the agent also prints the link and the MP4's path. Turn the automatic part off with
 `node <skill>/scripts/doomscroll.mjs auto off` (or `DOOMSCROLL_AUTO=0`); `auto on` brings it back. The skill alone (`npx skills add`) has no hooks.
+
+### Answer Claude's questions from your phone (opt-in)
+
+`node <skill>/scripts/doomscroll.mjs ask on` sends each multiple-choice question Claude Code asks you (AskUserQuestion) to your
+DoomScroll.build feed as a card: tap an option, pick several and Send, or type your own answer. Claude waits for it (up to 570 s,
+`ask on --wait <seconds>`, at most 590), and the card shows where your answer got to: Sent → Claude has it → Claude continued.
+No answer in time, signed out or offline: the question opens in the terminal as usual and the card says so. The terminal is
+locked while Claude waits. Only the question, its options and the folder's name are sent. `ask off` turns it off (the default).
 
 ### Or connect the MCP server
 
@@ -77,6 +85,7 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 | `POST /api/agent/videos/<id>/sharing` `{"shareable": true|false}` | Enable or revoke its stable unguessable public MP4 link |
 | `GET /api/agent/events?since=<id>&limit=<n>` | What changed for this key's login after event `since` (exclusive; default 0, ≤ 500 per page), oldest first, as `{events: [{id, type, source, subject, time, task, media, data}]}`: `task.queued` / `task.stage` / `task.failed` / `task.succeeded` (`media` = the finished video's token) and `submission.created` (`data.duplicate`). Events are kept 30 days; `410 {resync: true}` means `since` is older than what is kept, so re-read your videos and continue from the newest id |
 | `POST /api/agent/items` `{"item": {"key": "ext:<project>/<id>", "title", "description"?, "tags"?}, "text" \| "url": {"url", "excerpt"?}, "request"?, "postedAt"?, "source"?}` | A Markdown or link review card (≤ 256 KiB) for any key owner; `doomscroll.mjs push` sends these. Same key = same card; unchanged content answers `duplicate` with no new revision |
+| `doomscroll.mjs ask on\|off\|status`, `ask --hook`, `ask --settle` | Claude Code questions as feed cards: `POST /api/agent/items` with `"choices": {"multi"?, "options": [{"id", "label", "tone": "accept"}]}` (the card's own answer set), then `GET /api/agent/responses?items=<id,…>` (only those cards, and only they count as delivered) for your answer: `approve`/`verdict` with `option`, a multi-select `verdict` with `options`, or a `comment`. `limit=<n>` keeps the newest n |
 | `GET /api/agent/me` | The key's GitHub login, credits and `connection` (`automatic`: the GitHub App makes your PR videos by itself; `installations`, `finished`, `failed`, `connectUrl`) |
 | `POST /api/agent/github` `{"text"}` | The user's GitHub CLI tokens (`gh auth status --show-token` output, sent by `doomscroll.mjs gh` after the user agrees), so DoomScroll.build reads orgs where the App is not installed; answers `{connected, skipped}` |
 | `POST /api/agent/v1/audio/speech`, `POST /api/agent/v1/audio/transcriptions` | OpenAI-compatible voice, metered in credits |

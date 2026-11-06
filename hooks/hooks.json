@@ -1,5 +1,5 @@
 {
-  "description": "DoomScroll.build: a video for every pull request you open or push, and an offer to turn explanations into videos",
+  "description": "DoomScroll.build: a video for every pull request you open or push, an offer to turn explanations into videos, and (opt-in) Claude's questions answered from your feed",
   "hooks": {
     "SessionStart": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" session", "timeout": 5 }] }
@@ -7,8 +7,15 @@
     "UserPromptSubmit": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" prompt", "timeout": 5 }] }
     ],
+    "PreToolUse": [
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" ask --hook", "timeout": 600 }] }
+    ],
     "PostToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" bash", "timeout": 5 }] }
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" bash", "timeout": 5 }] },
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" ask --settle", "timeout": 10 }] }
+    ],
+    "PostToolUseFailure": [
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" ask --settle", "timeout": 10 }] }
     ]
   }
 }

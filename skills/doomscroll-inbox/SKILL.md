@@ -12,6 +12,8 @@ with the tools this session already has (MCP servers, CLIs), and you act on them
 `ds` below means `node ${CLAUDE_SKILL_DIR}/../doomscroll-video/scripts/doomscroll.mjs` (the `doomscroll-video` skill
 from the same plugin). Sign-in is the same: `DOOMSCROLL_API_KEY`, or `ds login` once (show the user the link and code).
 
+`ds ask on` sends Claude's multiple-choice questions to your phone (the plugin's opt-in AskUserQuestion hook; `ds ask off` stops it).
+
 ## 1. Collect
 
 Look only where you already have access, and only at what needs the user now:

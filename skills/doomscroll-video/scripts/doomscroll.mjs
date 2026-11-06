@@ -5,7 +5,7 @@
 // MIT License. See ../../../LICENSE.
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, closeSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,6 +42,10 @@ const HELP = `Usage:
   doomscroll.mjs me
   doomscroll.mjs gh                            Let DoomScroll.build read your PRs with your GitHub CLI sign-in (ask the user first)
   doomscroll.mjs auto on|off|status          Automatic PR videos and video offers in Claude Code (the plugin's hooks; default on)
+  doomscroll.mjs ask on [--wait <s>]|off|status   Send Claude Code's multiple-choice questions to your DoomScroll.build feed
+                                               (the plugin's AskUserQuestion hook; default off). Claude waits up to --wait
+                                               seconds (default 570, at most 590) for your answer there, then asks in the
+                                               terminal as usual. DOOMSCROLL_ASK_WAIT overrides the wait
   doomscroll.mjs watermark <video> [--out <file.mp4>] [--jingle <audio> --jingle-start <s>] [--threads <n>]   Brand any video: DoomScroll.build mark at the bottom right + a short outro (needs ffmpeg)
 
 Options:
@@ -111,6 +115,8 @@ function parseArgs(argv) {
     else if (arg === '--comment') args.comment = true
     else if (arg === '--attachment') args.attachment = argv[++i]
     else if (arg === '--or-shareable') args.orShareable = true
+    else if (arg === '--hook') args.hook = true
+    else if (arg === '--settle') args.settle = true
     else if (arg.startsWith('--')) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
       const value = argv[++i]
@@ -153,8 +159,8 @@ const exitFor = status => status === 401 ? 3 : status === 402 ? 4 : 1
  * without one (a 429/5xx on the last attempt included). `data` is parsed JSON ({} when the body is not JSON), text with
  * {text: true}, a Buffer with {raw: true}. The transient message names the resolved URL without its query and never a body.
  */
-async function http(path, { method = 'GET', headers: extra = {}, body, purpose = 'read', retry = method === 'GET' || method === 'HEAD', auth = true, raw = false, text = false } = {}) {
-  const deadline = DEADLINES[purpose], attempts = retry ? RETRY.attempts : 1, url = /^https?:\/\//.test(path) ? path : origin + path
+async function http(path, { method = 'GET', headers: extra = {}, body, purpose = 'read', retry = method === 'GET' || method === 'HEAD', auth = true, raw = false, text = false, deadline: limit } = {}) {
+  const deadline = limit ?? DEADLINES[purpose], attempts = retry ? RETRY.attempts : 1, url = /^https?:\/\//.test(path) ? path : origin + path
   let last = ''
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), deadline)
@@ -649,6 +655,142 @@ async function uploadBlob(endpoint, path, size, part) {
   }
 }
 
+/**
+ * Claude Code's AskUserQuestion on DoomScroll.build (opt-in: `ask on`). The PreToolUse hook (`ask --hook`) posts one card per
+ * question with the question's options as its answer choices, waits for the user's answer on DoomScroll.build, and hands
+ * Claude the answers so the terminal dialog never opens. Anything off (not opted in, not signed in, unreachable) or no answer
+ * in time prints nothing, closes the cards as "Moved to the terminal", and Claude asks in the terminal as usual. The hook reads
+ * only its own cards, so only answers it actually waits on count as delivered, and it records what it returned to Claude.
+ * The PostToolUse hook (`ask --settle`) then closes each card with what Claude really got; PostToolUseFailure (a declined or
+ * interrupted ask) closes them as "Cancelled". Only the question, its header, option labels and descriptions and the folder's
+ * name are sent.
+ */
+const ASK = { project: 'claude-ask', wait: 570, maxWait: 590, pollMs: 2000, probeMs: 3000, max: 4, hookMs: 600_000, reserveMs: 10_000, settleMs: 9_000 }
+const ASK_NOTE = { moved: 'Moved to the terminal', got: '✓ Claude got it', terminal: 'Answered in terminal', ended: 'Session ended', cancelled: 'Cancelled' }
+const REDO_TEXT = 'Redo requested: please make a new version that addresses my comments.'
+const ASK_STATE = join(CONFIG, 'ask')
+const readSettings = () => { try { return JSON.parse(readFileSync(SETTINGS, 'utf8')) } catch { return {} } }
+const askWait = seconds => Math.min(Math.max(Math.floor(Number(seconds)) || ASK.wait, 1), ASK.maxWait)
+function askSettings() {
+  const ask = readSettings().ask ?? {}
+  return { on: ask.on === true, wait: askWait(process.env.DOOMSCROLL_ASK_WAIT || ask.wait || ASK.wait) }
+}
+/** One quiet API call for the hooks: the data, or undefined on any failure (a hook must never fail Claude's tool call). A deadline means one attempt; none left means no call. */
+async function quiet(path, body, deadline) {
+  if (deadline !== undefined && deadline <= 0) return undefined
+  try {
+    const answer = await http(`/api/agent${path}`, { method: body ? 'POST' : 'GET', headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, purpose: body ? 'write' : 'read', ...(deadline ? { deadline, retry: false } : {}) })
+    return !answer.transient && answer.response.ok ? answer.data : undefined
+  } catch { return undefined }
+}
+/** Deadlines for one hook run: each call gets its purpose's deadline, never past `until`. */
+const budget = until => (purpose, by = until) => Math.min(DEADLINES[purpose], by - Date.now())
+const stdinJson = () => { try { return JSON.parse(readFileSync(0, 'utf8')) } catch { return undefined } }
+const folderTag = cwd => basename(String(cwd ?? '')).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100)
+const askPrefix = input => `ext:${ASK.project}/${input.session_id || 'session'}-`
+const askKey = (input, i) => `${askPrefix(input)}${input.tool_use_id || 'tool'}-${i}`
+const askStateFile = input => join(ASK_STATE, `${String(input.tool_use_id || 'tool').replace(/[^A-Za-z0-9_-]/g, '_')}.json`)
+const askDone = (card, text, deadline) => quiet(`/items/${card.id}/responses`, { kind: 'done', revision: card.revision, ...(text ? { text } : {}) }, deadline)
+function askCard(input, q, i) {
+  const options = q.options ?? []
+  return {
+    item: { key: askKey(input, i), title: String(q.header || q.question).slice(0, 200), tags: ['ask', folderTag(input.cwd)].filter(Boolean) },
+    text: `${q.question}\n\n${options.map(o => `- **${o.label}**${o.description ? ` — ${o.description}` : ''}`).join('\n')}`,
+    request: true,
+    choices: { multi: !!q.multiSelect, options: options.map((o, n) => ({ id: `o${n + 1}`, label: String(o.label).slice(0, 80), tone: 'accept' })) },
+  }
+}
+/** The user's newest answer among a card's responses: a label, labels joined with ", ", free text, or null once cleared. */
+function answerOf(responses, q) {
+  const label = id => q.options?.[Number(String(id).slice(1)) - 1]?.label ?? id
+  const mine = responses.filter(r => ['approve', 'verdict', 'comment', 'clear'].includes(r.kind) && !(r.kind === 'comment' && Object.values(ASK_NOTE).some(note => r.text?.startsWith(note))))
+  const last = mine.sort((a, b) => a.id - b.id).at(-1)
+  if (!last) return undefined
+  if (last.kind === 'clear') return null
+  if (last.kind === 'comment') return last.text === REDO_TEXT ? 'Please rethink this question.' : last.text
+  if (last.options?.length) return last.options.map(label).join(', ')
+  return last.option ? label(last.option) : undefined
+}
+/**
+ * Closes questions no hook waits on any more: this session's earlier asks (a session blocks on one question at a time, so they
+ * were interrupted) and other sessions' asks older than any hook can wait. Moved cards are already closed. Also drops leftover state files.
+ */
+async function askSweep(input, within) {
+  const listed = await quiet(`/items?project=${ASK.project}`, undefined, within('read'))
+  const session = askPrefix(input), current = `${session}${input.tool_use_id || 'tool'}-`, cutoff = Date.now() - (ASK.maxWait + 60) * 1000
+  for (const item of listed?.items ?? []) {
+    if (item.done || item.attention !== 'you' || item.key.startsWith(current)) continue
+    const ours = item.key.startsWith(session)
+    if (ours || Date.parse(item.postedAt) < cutoff) await askDone(item, ours ? ASK_NOTE.cancelled : ASK_NOTE.ended, within('write'))
+  }
+  try { for (const name of readdirSync(ASK_STATE)) if (statSync(join(ASK_STATE, name)).mtimeMs < cutoff) rmSync(join(ASK_STATE, name), { force: true }) } catch { /* no state yet */ }
+}
+async function askHook() {
+  const start = Date.now(), { on, wait } = askSettings()
+  if (!on || !key) return
+  const input = stdinJson(), questions = input?.tool_input?.questions
+  if (!Array.isArray(questions) || !questions.length || questions.length > ASK.max) return
+  const stop = start + Math.min(wait * 1000, ASK.hookMs - ASK.reserveMs), end = start + ASK.hookMs - 1000, within = budget(stop)
+  if (!await quiet('/me', undefined, Math.min(ASK.probeMs, within('read')))) return
+  await askSweep(input, within)
+  const cards = []
+  for (const [i, q] of questions.entries()) {
+    const posted = await quiet('/items', askCard(input, q, i), within('write'))
+    if (!posted) break
+    cards.push({ id: posted.itemId, revision: posted.revision, q })
+  }
+  if (!cards.length) return
+  const save = extra => {
+    mkdirSync(ASK_STATE, { recursive: true, mode: 0o700 })
+    writeFileSync(askStateFile(input), JSON.stringify({ cards: cards.map(({ id, revision, q }) => ({ id, revision, question: q.question, options: (q.options ?? []).map(o => ({ label: o.label })) })), ...extra }))
+  }
+  save({})
+  let settled = false
+  const close = async text => { settled = true; for (const card of cards) await askDone(card, text, within('write', end)) }
+  const interrupted = () => { if (settled) process.exit(0); void close(ASK_NOTE.cancelled).finally(() => process.exit(0)) }
+  process.once('SIGTERM', interrupted); process.once('SIGINT', interrupted)
+  const answers = new Map()
+  const take = (card, responses) => { const answer = answerOf(responses.filter(r => r.itemId === card.id && r.revision === card.revision), card.q); if (answer === null) answers.delete(card); else if (answer !== undefined) answers.set(card, answer) }
+  const ids = cards.map(card => card.id).join(',')
+  while (cards.length === questions.length) {
+    const read = await quiet(`/responses?items=${ids}`, undefined, within('read'))
+    if (read) for (const card of cards) take(card, read.responses)
+    if (answers.size === cards.length || stop - Date.now() < ASK.pollMs) break
+    await sleep(ASK.pollMs)
+  }
+  if (cards.length === questions.length && answers.size === cards.length) {
+    settled = true
+    save({ returned: Object.fromEntries(cards.map(card => [card.id, answers.get(card)])) })
+    const output = { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { ...input.tool_input, answers: Object.fromEntries(cards.map(card => [card.q.question, answers.get(card)])) } }
+    process.stdout.write(`${JSON.stringify({ hookSpecificOutput: output })}\n`)
+    return
+  }
+  await close(ASK_NOTE.moved)
+}
+/** Closes each card with what Claude really got: the phone answer the hook returned, the terminal answer, or Cancelled. */
+async function askSettle() {
+  const input = stdinJson()
+  if (!input || !key) return
+  const file = askStateFile(input), within = budget(Date.now() + ASK.settleMs)
+  let state
+  try { state = JSON.parse(readFileSync(file, 'utf8')) } catch { return }
+  const failed = input.hook_event_name === 'PostToolUseFailure', returned = state.returned ?? {}
+  const given = input.tool_input?.answers ?? input.tool_response?.answers ?? {}
+  for (const card of state.cards ?? []) {
+    if (failed) { await askDone(card, ASK_NOTE.cancelled, within('write')); continue }
+    const sent = returned[card.id]
+    const read = sent === undefined ? undefined : await quiet(`/items/${card.id}`, undefined, within('read'))
+    if (read && answerOf(read.item.responses.filter(r => r.revision === card.revision), card) === sent) {
+      await quiet(`/items/${card.id}/responses`, { kind: 'comment', revision: card.revision, text: ASK_NOTE.got }, within('write'))
+      if (!read.item.done) await askDone(card, undefined, within('write'))
+      continue
+    }
+    const text = sent !== undefined ? `${ASK_NOTE.got}: ${sent}` : given[card.question] ? `${ASK_NOTE.terminal}: ${given[card.question]}` : ASK_NOTE.terminal
+    await askDone(card, text.slice(0, 2000), within('write'))
+  }
+  rmSync(file, { force: true })
+}
+
 if (command === 'item') process.stdout.write(`${JSON.stringify(await itemCommand(target, args))}\n`)
 else if (command === 'push') await push(target)
 else if (command === 'login') await login()
@@ -665,6 +807,20 @@ else if (command === 'auto') {
     writeFileSync(SETTINGS, JSON.stringify(settings, null, 2))
   } else if (target && target !== 'status') fail('auto takes on, off or status')
   process.stdout.write(`${JSON.stringify({ auto: settings.auto !== false && process.env.DOOMSCROLL_AUTO !== '0' })}\n`)
+}
+else if (command === 'ask') {
+  if (args.hook) await askHook()
+  else if (args.settle) await askSettle()
+  else {
+    const settings = readSettings()
+    if (target === 'on' || target === 'off') {
+      settings.ask = { ...(settings.ask ?? {}), on: target === 'on', ...(args.wait !== undefined ? { wait: askWait(args.wait) } : {}) }
+      mkdirSync(CONFIG, { recursive: true, mode: 0o700 })
+      writeFileSync(SETTINGS, JSON.stringify(settings, null, 2))
+    } else if (target && target !== 'status') fail('ask takes on, off or status')
+    process.stdout.write(`${JSON.stringify({ ask: askSettings() })}
+`)
+  }
 }
 else if (command === 'me') process.stdout.write(`${JSON.stringify(await call('/api/agent/me'))}\n`)
 else if (command === 'gh') {
