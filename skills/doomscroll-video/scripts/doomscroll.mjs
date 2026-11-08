@@ -3,6 +3,8 @@
 // DoomScroll's metered voice APIs (speech, word-timed transcription) without an OpenAI key of your own.
 // Dependency-free (Node 18+). Reads the key from DOOMSCROLL_API_KEY or the browser sign-in saved by `login`, and never prints it.
 // MIT License. See ../../../LICENSE.
+import { clientHeaders } from './release.mjs'
+import { reportHook, reportingSettings } from './reporting.mjs'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { chmodSync, closeSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -40,6 +42,7 @@ const HELP = `Usage:
   doomscroll.mjs share <id>                     Enable its public watch page (no sign-in) and public MP4 URL
   doomscroll.mjs unshare <id>                   Disable its public watch page and MP4 URL
   doomscroll.mjs me
+  doomscroll.mjs report on | off | status   Private lifecycle, tool outcomes and designated completion summaries (on by default)
   doomscroll.mjs gh                            Let DoomScroll.build read your PRs with your GitHub CLI sign-in (ask the user first)
   doomscroll.mjs auto on|off|status          Automatic PR videos and video offers in Claude Code (the plugin's hooks; default on)
   doomscroll.mjs ask on [--wait <s>]|off|status   Send Claude Code's multiple-choice questions to your DoomScroll.build feed
@@ -64,7 +67,8 @@ Options:
                                   "cooking" animation until the video is ready) linking to DoomScroll.build; a re-run edits it
   --auto                          PR only: you are making it on your own (after a push), not because the user asked; when the
                                   DoomScroll.build GitHub App makes this PR's videos already, nothing is queued and its link is printed
-  --open                          Open the finished video in the browser (its DoomScroll.build page, else the share link, else the MP4)
+  --open                          Open the video page (also works with status; explicit waited pr/local opens by default)
+  --no-open                       Do not open a browser; automatic and no-wait requests never open one
   --no-wait                       Submit and print the id and the links the video will have, without waiting
   --timeout <minutes>             Give up waiting after this long (default 60)
 
@@ -111,6 +115,7 @@ function parseArgs(argv) {
     else if (arg === '--shareable') args.shareable = true
     else if (arg === '--private') args.private = true
     else if (arg === '--open') args.open = true
+    else if (arg === '--no-open') args.noOpen = true
     else if (arg === '--auto') args.auto = true
     else if (arg === '--comment') args.comment = true
     else if (arg === '--attachment') args.attachment = argv[++i]
@@ -133,7 +138,7 @@ const host = new URL(origin).host
 /** A `/watch/<token>` page: anyone holding the link can watch, signed in or not. */
 const unlisted = url => /\/watch\/[0-9a-f]{32}$/.test(url)
 const CONFIG = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'doomscroll')
-const CREDENTIALS = join(CONFIG, 'credentials.json'), SETTINGS = join(CONFIG, 'settings.json')
+const CREDENTIALS = join(CONFIG, 'credentials.json'), SETTINGS = join(CONFIG, 'settings.json'), REPORTING_OFF = join(CONFIG, 'reporting-off')
 const saved = () => { try { return JSON.parse(readFileSync(CREDENTIALS, 'utf8'))[origin]?.apiKey } catch { return undefined } }
 const key = process.env.DOOMSCROLL_API_KEY || saved()
 const headers = () => {
@@ -161,11 +166,12 @@ const exitFor = status => status === 401 ? 3 : status === 402 ? 4 : 1
  */
 async function http(path, { method = 'GET', headers: extra = {}, body, purpose = 'read', retry = method === 'GET' || method === 'HEAD', auth = true, raw = false, text = false, deadline: limit } = {}) {
   const deadline = limit ?? DEADLINES[purpose], attempts = retry ? RETRY.attempts : 1, url = /^https?:\/\//.test(path) ? path : origin + path
+  if (new URL(url).origin !== new URL(origin).origin) return { transient: 'refused unrelated request origin' }
   let last = ''
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), deadline)
     try {
-      const response = await fetch(url, { method, headers: { ...(auth ? headers() : {}), ...extra }, body, redirect: 'manual', signal: controller.signal })
+      const response = await fetch(url, { method, headers: { ...(auth ? headers() : {}), ...extra, ...clientHeaders(url, origin) }, body, redirect: 'manual', signal: controller.signal })
       const bytes = method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await response.arrayBuffer())
       clearTimeout(timer)
       if (retry && (response.status === 429 || response.status >= 500)) {
@@ -334,11 +340,13 @@ async function wait(id, args) {
 
 async function finish(video, args, extra = {}) {
   if (video.status === 'failed') { process.stdout.write(`${JSON.stringify({ id: video.id, status: 'failed', error: video.error })}\n`); process.exit(2) }
+  const watchUrl = video.links?.watchUrl || video.video?.watchUrl
+  if (watchUrl) log(`watch it on ${host}: ${watchUrl}${unlisted(watchUrl) ? ' (anyone with the link)' : ''}`)
+  const shouldOpen = !args.noOpen && !args.auto && (args.open || command === 'pr' || command === 'local')
+  const opened = shouldOpen && watchUrl ? openInBrowser(watchUrl) : undefined
   const mp4 = await download(video.video.mp4Url, args.out || `doomscroll-${video.id}.mp4`)
   const gif = args.gif ? await download(video.video.gifUrl, args.gif) : undefined
-  const opened = args.open ? openInBrowser(video.video.watchUrl || video.video.shareUrl || resolve(mp4)) : undefined
-  if (video.video.watchUrl) log(`watch it on ${host}: ${video.video.watchUrl}${unlisted(video.video.watchUrl) ? ' (anyone with the link)' : ''}`)
-  process.stdout.write(`${JSON.stringify({ id: video.id, status: 'succeeded', mp4, ...(gif ? { gif } : {}), previewUrl: video.video.previewUrl, watchUrl: video.video.watchUrl, publish: video.publish, shareable: video.shareable, shareUrl: video.video.shareUrl, ...(video.video.appUrl ? { appUrl: video.video.appUrl } : {}), ...(args.open ? { opened } : {}), ...extra })}\n`)
+  process.stdout.write(`${JSON.stringify({ id: video.id, status: 'succeeded', mp4, ...(gif ? { gif } : {}), previewUrl: video.video.previewUrl, watchUrl: video.video.watchUrl, publish: video.publish, shareable: video.shareable, shareUrl: video.video.shareUrl, ...(video.video.appUrl ? { appUrl: video.video.appUrl } : {}), ...(shouldOpen ? { opened } : {}), ...extra })}\n`)
 }
 
 const args = parseArgs(process.argv.slice(2))
@@ -668,7 +676,8 @@ async function uploadBlob(endpoint, path, size, part) {
 const ASK = { project: 'claude-ask', wait: 570, maxWait: 590, pollMs: 2000, probeMs: 3000, max: 4, hookMs: 600_000, reserveMs: 10_000, settleMs: 9_000 }
 const ASK_NOTE = { moved: 'Moved to the terminal', got: '✓ Claude got it', terminal: 'Answered in terminal', ended: 'Session ended', cancelled: 'Cancelled' }
 const REDO_TEXT = 'Redo requested: please make a new version that addresses my comments.'
-const ASK_STATE = join(CONFIG, 'ask')
+const scope = createHash('sha256').update(`${origin}\0${key || ''}`).digest('hex')
+const ASK_STATE = join(CONFIG, 'ask', scope)
 const readSettings = () => { try { return JSON.parse(readFileSync(SETTINGS, 'utf8')) } catch { return {} } }
 const askWait = seconds => Math.min(Math.max(Math.floor(Number(seconds)) || ASK.wait, 1), ASK.maxWait)
 function askSettings() {
@@ -689,7 +698,7 @@ const stdinJson = () => { try { return JSON.parse(readFileSync(0, 'utf8')) } cat
 const folderTag = cwd => basename(String(cwd ?? '')).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100)
 const askPrefix = input => `ext:${ASK.project}/${input.session_id || 'session'}-`
 const askKey = (input, i) => `${askPrefix(input)}${input.tool_use_id || 'tool'}-${i}`
-const askStateFile = input => join(ASK_STATE, `${String(input.tool_use_id || 'tool').replace(/[^A-Za-z0-9_-]/g, '_')}.json`)
+const askStateFile = input => join(ASK_STATE, `${createHash('sha256').update(`${input.session_id || ''}\0${input.tool_use_id || ''}`).digest('hex')}.json`)
 const askDone = (card, text, deadline) => quiet(`/items/${card.id}/responses`, { kind: 'done', revision: card.revision, ...(text ? { text } : {}) }, deadline)
 function askCard(input, q, i) {
   const options = q.options ?? []
@@ -791,7 +800,24 @@ async function askSettle() {
   rmSync(file, { force: true })
 }
 
-if (command === 'item') process.stdout.write(`${JSON.stringify(await itemCommand(target, args))}\n`)
+if (command === 'report') {
+  try {
+    if (args.hook) { if (key) await reportHook({ input: stdinJson(), config: CONFIG, scope, quiet, settings: readSettings() }) }
+    else {
+      const settings = readSettings()
+      const next = reportingSettings(settings, scope, target)
+      if (next) {
+        mkdirSync(CONFIG, { recursive: true, mode: 0o700 })
+        writeFileSync(SETTINGS, JSON.stringify(next, null, 2), { mode: 0o600 })
+        // hooks.json tests this file in the shell, so a user who turned reporting off never starts Node on every tool call.
+        if (target === 'off' && !Object.values(next.reporting ?? {}).some(scoped => scoped?.on !== false)) writeFileSync(REPORTING_OFF, '', { mode: 0o600 })
+        else rmSync(REPORTING_OFF, { force: true })
+      }
+      process.stdout.write(`${JSON.stringify({ reporting: (next || settings).reporting?.[scope]?.on !== false })}\n`)
+    }
+  } catch (error) { if (!args.hook) fail(error.message) }
+}
+else if (command === 'item') process.stdout.write(`${JSON.stringify(await itemCommand(target, args))}\n`)
 else if (command === 'push') await push(target)
 else if (command === 'login') await login()
 else if (command === 'logout') { try { const all = JSON.parse(readFileSync(CREDENTIALS, 'utf8')); delete all[origin]; Object.keys(all).length ? writeFileSync(CREDENTIALS, JSON.stringify(all, null, 2), { mode: 0o600 }) : rmSync(CREDENTIALS) } catch { /* nothing saved */ } process.stdout.write(`${JSON.stringify({ signedOut: true })}\n`) }
@@ -831,7 +857,13 @@ else if (command === 'gh') {
   process.stdout.write(`${JSON.stringify(await call('/api/agent/github', { text }))}\n`)
 }
 else if (command === 'video-comment') process.stdout.write(`${JSON.stringify(videoInComment(parsePr(target), args.attachment))}\n`)
-else if (command === 'status') { if (!target) fail('status needs an id'); process.stdout.write(`${JSON.stringify((await call(`/api/agent/videos/${encodeURIComponent(target)}`)).video)}\n`) }
+else if (command === 'status') {
+  if (!target) fail('status needs an id')
+  const { video } = await call(`/api/agent/videos/${encodeURIComponent(target)}`)
+  const watchUrl = video.links?.watchUrl || video.video?.watchUrl
+  if (watchUrl) { log(`watch it on ${host}: ${watchUrl}`); if (args.open && !args.noOpen) openInBrowser(watchUrl) }
+  process.stdout.write(`${JSON.stringify(video)}\n`)
+}
 else if (command === 'share' || command === 'unshare') {
   if (!target) fail(`${command} needs an id`)
   const { video } = await call(`/api/agent/videos/${encodeURIComponent(target)}/sharing`, { shareable: command === 'share' })
@@ -862,7 +894,7 @@ else if (command === 'download') {
   if (!video) {
     // The DoomScroll GitHub App makes this PR's videos by itself: nothing was queued or charged.
     log(`the DoomScroll.build GitHub App makes this PR's video automatically; nothing was queued. Watch it on ${host}: ${watchUrl}`)
-    if (args.open) openInBrowser(watchUrl)
+    if (args.open && !args.noOpen && !args.auto && !args.noWait) openInBrowser(watchUrl)
     process.stdout.write(`${JSON.stringify({ status: 'automatic', watchUrl })}\n`)
     process.exit(0)
   }

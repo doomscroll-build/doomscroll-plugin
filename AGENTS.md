@@ -26,7 +26,7 @@ The short version:
    DoomScroll.build posts status, its hosted preview/link, and failure guidance through the user's GitHub account. No organization
    App installation is needed. Repository write access and Stealth mode off are required. Without this opt-in, requests stay private.
 6. Never upload DoomScroll.build MP4s to GitHub or write a separate `gh pr comment` publication path. All videos stay on DoomScroll.build.
-   Submit the video for real and track its returned job id. When the user asked for it, add `--open` and still print the link and MP4 path.
+   Submit the video for real and track its returned job id. Show the watch page link when it is queued and when it is ready. A waited explicit request opens the page once by default (`--no-open` opts out); with `--no-wait`, poll `status <id>` and use `status <id> --open` when it is ready.
 
 # DoomScroll.build inbox
 

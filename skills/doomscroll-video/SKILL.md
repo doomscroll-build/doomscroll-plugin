@@ -244,8 +244,7 @@ node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs pr acme/widget#42 --notes doomsc
 node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs local --title "Cache search results" --description "Adds a Redis cache in front of search." --notes doomscroll-notes.json --include src/search.ts --out doomscroll.mp4 --gif doomscroll.gif
 ```
 
-- **When the user asked for the video, add `--open`**: it opens in their browser (the DoomScroll.build page for a PR, else the share
-  link, else the MP4). Still print the `watchUrl`/`shareUrl` and the MP4 path in your reply.
+- **Opening the page.** Show the `watchUrl` page as soon as the video is queued and again when it is ready. A waited explicit `pr` or `local` request opens that page once on completion, before any download, and `--no-open` opts out. `--no-wait` exits at once and opens nothing later, so if the user wants it opened, poll with `status <id>` yourself and then run `status <id> --open`. `--auto` never opens a browser. Still print the `watchUrl`/`shareUrl` and the MP4 path in your reply.
 - `pr` takes `owner/repo#number` or the github.com URL; `gh pr view --json url -q .url` finds the current branch's PR.
   `bash ${CLAUDE_SKILL_DIR}/scripts/pr-video.sh [--pr <url>] [options]` does that lookup and runs `pr <url> --publish --or-shareable --comment
   --no-wait [options]` in one step: the default for a PR. It publishes on the PR when the user can write to the repo and

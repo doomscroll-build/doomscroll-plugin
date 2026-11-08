@@ -30,7 +30,7 @@ if (event === 'session') {
     '- After you explain how something works or what a change does in more than a few lines, end with one short question: "Would you like to see this explanation as an animated video?" On yes, follow the doomscroll-video skill. Ask once per explanation and stop offering for the rest of the conversation after a no.',
     '- When the user hands you several tasks at once or work to finish while they are away (overnight, "while I sleep", a long list), ask once, together with your other questions: "Should I add these to your DoomScroll.build feed so you can review them as videos?" On yes, give each finished change a PR video when it has a PR (it lands in their feed) and a local video otherwise, all private and with --no-wait, and list the links at the end.',
     '- The first time DoomScroll.build comes up in this conversation, run its `me` command once: if connection.automatic is false, suggest in one sentence connecting GitHub at connection.connectUrl so every new PR gets its video by itself.',
-    `- When the user explicitly asks for a video, add --open so it opens in their browser, and still print the link and the MP4 path. Turn all of this off with: ${run} auto off`,
+    `- Show a video's watch page link as soon as it is queued and again when ready. A waited explicit pr/local request opens that page once (add --no-open to skip it); with --no-wait, poll status <id> yourself and run status <id> --open when it is ready. Turn all of this off with: ${run} auto off`,
   ].join('\n'))
 } else if (event === 'prompt') {
   // A batch of work or work left running while the user is away: the moment a feed of review videos helps most.

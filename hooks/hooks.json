@@ -1,21 +1,164 @@
 {
-  "description": "DoomScroll.build: a video for every pull request you open or push, an offer to turn explanations into videos, and (opt-in) Claude's questions answered from your feed",
+  "description": "DoomScroll.build videos, opt-in questions and private session reporting.",
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" session", "timeout": 5 }] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" session",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ ! -f \"${XDG_CONFIG_HOME:-$HOME/.config}/doomscroll/reporting-off\" ]; then node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" report --hook; fi",
+            "timeout": 3
+          }
+        ]
+      }
     ],
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" prompt", "timeout": 5 }] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" prompt",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ ! -f \"${XDG_CONFIG_HOME:-$HOME/.config}/doomscroll/reporting-off\" ]; then node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" report --hook; fi",
+            "timeout": 3
+          }
+        ]
+      }
     ],
     "PreToolUse": [
-      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" ask --hook", "timeout": 600 }] }
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" ask --hook",
+            "timeout": 600
+          }
+        ]
+      }
     ],
     "PostToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" bash", "timeout": 5 }] },
-      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" ask --settle", "timeout": 10 }] }
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.mjs\" bash",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" ask --settle",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ ! -f \"${XDG_CONFIG_HOME:-$HOME/.config}/doomscroll/reporting-off\" ]; then node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" report --hook; fi",
+            "timeout": 3
+          }
+        ]
+      }
     ],
     "PostToolUseFailure": [
-      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" ask --settle", "timeout": 10 }] }
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" ask --settle",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ ! -f \"${XDG_CONFIG_HOME:-$HOME/.config}/doomscroll/reporting-off\" ]; then node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" report --hook; fi",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ ! -f \"${XDG_CONFIG_HOME:-$HOME/.config}/doomscroll/reporting-off\" ]; then node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" report --hook; fi",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ ! -f \"${XDG_CONFIG_HOME:-$HOME/.config}/doomscroll/reporting-off\" ]; then node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" report --hook; fi",
+            "timeout": 3
+          }
+        ],
+        "matcher": "permission_prompt"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ ! -f \"${XDG_CONFIG_HOME:-$HOME/.config}/doomscroll/reporting-off\" ]; then node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" report --hook; fi",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ ! -f \"${XDG_CONFIG_HOME:-$HOME/.config}/doomscroll/reporting-off\" ]; then node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" report --hook; fi",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ ! -f \"${XDG_CONFIG_HOME:-$HOME/.config}/doomscroll/reporting-off\" ]; then node \"${CLAUDE_PLUGIN_ROOT}/skills/doomscroll-video/scripts/doomscroll.mjs\" report --hook; fi"
+          }
+        ]
+      }
     ]
   }
 }

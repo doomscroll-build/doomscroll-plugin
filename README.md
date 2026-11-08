@@ -29,7 +29,7 @@ The plugin adds three small hooks. They only add a line of context for your agen
 - **After a long explanation**, it asks "Would you like to see this explanation as an animated video?"
 - **When you hand over a batch of tasks or overnight work**, it asks once whether to add the results to your DoomScroll.build feed as videos.
 
-When you ask for a video yourself, it opens in your browser, and the agent also prints the link and the MP4's path. Turn the automatic part off with
+When you ask for a video yourself, the agent shows its page link right away. When the video is ready, the agent shows the link again and opens the page once before downloading, unless you pass `--no-open`. Automatic and `--no-wait` requests never open a browser. `status <id> --open` opens a ready page without downloading again. Turn the automatic part off with
 `node <skill>/scripts/doomscroll.mjs auto off` (or `DOOMSCROLL_AUTO=0`); `auto on` brings it back. The skill alone (`npx skills add`) has no hooks.
 
 ### Answer Claude's questions from your phone (opt-in)
@@ -39,6 +39,17 @@ DoomScroll.build feed as a card: tap an option, pick several and Send, or type y
 `ask on --wait <seconds>`, at most 590), and the card shows where your answer got to: Sent → Claude has it → Claude continued.
 No answer in time, signed out or offline: the question opens in the terminal as usual and the card says so. The terminal is
 locked while Claude waits. Only the question, its options and the folder's name are sent. `ask off` turns it off (the default).
+
+### Private session reporting (on by default)
+
+The plugin's reporting hooks are on once you sign in, for this DoomScroll.build account and server. `node <skill>/scripts/doomscroll.mjs report off` turns them off, `report on` turns them back on, and `report status` shows the setting. Standalone skills install no hooks, so they never report.
+
+- **Session status.** One private FYI card per session (`request: false`) shows started, working, permission needed, turn ended, turn failed or exited. A turn that ended is not reported as a finished task. When Claude Code supplies them, it shows only the number of background tasks and scheduled wakeups. Missing values are shown as unknown.
+- **Tool activity.** The same status card lists up to 50 tool names with success or failure for the current turn. It never sends tool inputs, outputs, commands, errors, environment variables or credentials.
+- **Completion summaries.** A separate review card (`request: true`) is sent only when Claude's final message has a `## DoomScroll completion` section. It contains at most 4 KiB of that section and 10 public HTTPS links. Local, credential-bearing and query links are dropped. If the section is missing, only status is sent. A summary can still include sensitive project text, so write it with that in mind.
+- **Questions.** These use the existing `ask on` bridge described above. Reporting never creates a second question card.
+
+Each report makes one quiet request with a 2-second limit, or 1.1 seconds at session end, and a failure never interrupts Claude. Nothing is queued for later delivery and no background process is started. Reports never include prompts, transcripts, transcript paths, working directories or terminal routing. The skill alone (`npx skills add`) installs none of these hooks.
 
 ### Or connect the MCP server
 
@@ -75,7 +86,7 @@ access**.
 ## API
 
 The skill's script (`skills/doomscroll-video/scripts/doomscroll.mjs`, Node 18+, no dependencies) calls a small
-bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll.mjs login` or `DOOMSCROLL_API_KEY`.
+bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll.mjs login` or `DOOMSCROLL_API_KEY`. Every request to the configured DoomScroll.build origin, including sign-in, polls, downloads and upload parts, sends `X-DoomScroll-Client: doomscroll-cli`, `X-DoomScroll-Version` (the plugin release) and `X-DoomScroll-Distribution` (`claude-plugin` or `standalone`). The client refuses any request for another origin. `.claude-plugin/plugin.json` is the release source of truth. `node hooks/generate-release.mjs` regenerates the standalone `scripts/release.json`, and `--check` fails when the two differ.
 
 | Request | What it does |
 | --- | --- |
@@ -86,6 +97,7 @@ bearer-token API (`Authorization: Bearer <key>`). The key comes from `doomscroll
 | `GET /api/agent/events?since=<id>&limit=<n>` | What changed for this key's login after event `since` (exclusive; default 0, ≤ 500 per page), oldest first, as `{events: [{id, type, source, subject, time, task, media, data}]}`: `task.queued` / `task.stage` / `task.failed` / `task.succeeded` (`media` = the finished video's token) and `submission.created` (`data.duplicate`). Events are kept 30 days; `410 {resync: true}` means `since` is older than what is kept, so re-read your videos and continue from the newest id |
 | `POST /api/agent/items` `{"item": {"key": "ext:<project>/<id>", "title", "description"?, "tags"?}, "text" \| "url": {"url", "excerpt"?}, "request"?, "postedAt"?, "source"?}` | A Markdown or link review card (≤ 256 KiB) for any key owner; `doomscroll.mjs push` sends these. Same key = same card; unchanged content answers `duplicate` with no new revision |
 | `doomscroll.mjs ask on\|off\|status`, `ask --hook`, `ask --settle` | Claude Code questions as feed cards: `POST /api/agent/items` with `"choices": {"multi"?, "options": [{"id", "label", "tone": "accept"}]}` (the card's own answer set), then `GET /api/agent/responses?items=<id,…>` (only those cards, and only they count as delivered) for your answer: `approve`/`verdict` with `option`, a multi-select `verdict` with `options`, or a `comment`. `limit=<n>` keeps the newest n |
+| `doomscroll.mjs report on\|off\|status`, `report --hook` | Private (on by default) session status and designated completion cards through `POST /api/agent/items` (`ext:claude-status/<hash>` with `request: false`, `ext:claude-completion/<hash>-<turn>-<hash>` with `request: true`) |
 | `GET /api/agent/me` | The key's GitHub login, credits and `connection` (`automatic`: the GitHub App makes your PR videos by itself; `installations`, `finished`, `failed`, `connectUrl`) |
 | `POST /api/agent/github` `{"text"}` | The user's GitHub CLI tokens (`gh auth status --show-token` output, sent by `doomscroll.mjs gh` after the user agrees), so DoomScroll.build reads orgs where the App is not installed; answers `{connected, skipped}` |
 | `POST /api/agent/v1/audio/speech`, `POST /api/agent/v1/audio/transcriptions` | OpenAI-compatible voice, metered in credits |
