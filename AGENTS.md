@@ -31,6 +31,6 @@ The short version:
 # DoomScroll.build inbox
 
 When the user asks to sync their inbox, notifications or to-dos to DoomScroll.build, or to act on their DoomScroll.build comments,
-follow `skills/doomscroll-inbox/SKILL.md`. In short: collect what needs the user with the tools you already have, write
+follow `skills/doomscroll-video/inbox.md`. In short: collect what needs the user with the tools you already have, write
 one `{"app","id","title","summary",...}` JSON line per item, run `node <path>/skills/doomscroll-video/scripts/doomscroll.mjs push inbox.jsonl`,
 then read `item events --since <cursor>` and do only what a `user:` comment explicitly asks, never on your own initiative.

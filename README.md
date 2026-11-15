@@ -112,7 +112,7 @@ with a "Play the MP4" link in the comment) and prints the watch link.
 
 ## Your inbox in DoomScroll.build
 
-Your agent already reads your email, chat, docs and tickets. The `doomscroll-inbox` skill has it collect what needs you,
+Your agent already reads your email, chat, docs and tickets. The same skill (its `skills/doomscroll-video/inbox.md` guide, read only when you ask for this) has it collect what needs you,
 push each item to DoomScroll.build as a short card, and then do exactly what you comment there (reply, accept, mark done),
 with its own tools. Ask it: *Sync my inbox to DoomScroll.build* (or run that on `/loop 30m`).
 

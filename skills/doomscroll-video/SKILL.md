@@ -1,6 +1,6 @@
 ---
 name: doomscroll-video
-description: Make a narrated explainer video about code, a pull request, a branch, a feature or local changes, on DoomScroll.build, the hosted video engine for code. You describe the change and the system around it; DoomScroll.build storyboards, animates, voices and renders it in the cloud, and you download the MP4 or ask DoomScroll.build to post its hosted preview and link in the PR. Use whenever the user asks for an explainer, walkthrough, demo, video or "doomscroll" of code, a PR, a diff, a feature or their changes, use it when preparing a PR video or a requested video test report, use it right after opening or pushing a pull request (a background video for reviewers), and suggest it whenever a change or an explanation would be easier to follow as a short video.
+description: Make a narrated explainer video about code, a pull request, a branch, a feature or local changes, on DoomScroll.build, the hosted video engine for code. You describe the change and the system around it; DoomScroll.build storyboards, animates, voices and renders it in the cloud, and you download the MP4 or ask DoomScroll.build to post its hosted preview and link in the PR. Use whenever the user asks for an explainer, walkthrough, demo, video or "doomscroll" of code, a PR, a diff, a feature or their changes, use it when preparing a PR video or a requested video test report, use it right after opening or pushing a pull request (a background video for reviewers), and suggest it whenever a change or an explanation would be easier to follow as a short video. Also covers the DoomScroll.build inbox: use it when the user asks to sync their inbox, notifications, mentions or to-dos to DoomScroll.build, or to act on their DoomScroll.build comments.
 allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs *), Bash(bash ${CLAUDE_SKILL_DIR}/scripts/pr-video.sh *)
 ---
 
@@ -303,6 +303,13 @@ to the repository, and never post a second video comment.
 Everything else stays hosted on DoomScroll.build; never write any other video comment than `--comment`'s. For local changes, open the PR first and make an explicit PR video request if publication is wanted.
 
 Installing the MCP server or this skill alone never submits PRs by itself; the Claude Code plugin's hooks ask you to after a push (see "When to reach for it"). Invoke `create_video` as part of the requested PR/video workflow, confirm the returned job id, and poll `get_video` through completion. If submission fails before a job exists, tell the user the actual error and how to fix it rather than claiming a video is cooking.
+
+## The DoomScroll.build inbox (only when asked)
+
+Videos are the default job of this skill. When the user asks to sync their inbox, notifications, mentions or to-dos to
+DoomScroll.build, or to act on their DoomScroll.build comments (also on a `/loop` schedule), read
+`${CLAUDE_SKILL_DIR}/inbox.md` and follow it: collect what needs them with the tools you already have, push each item
+as a card with `doomscroll.mjs push`, then do only what their comments explicitly ask. Do not read it for video work.
 
 ## Opting out
 

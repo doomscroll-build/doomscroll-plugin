@@ -1,16 +1,10 @@
----
-name: doomscroll-inbox
-description: Turn DoomScroll.build into the user's one feed for everything that needs them. You collect what is waiting in the tools you already have (email, chat, docs, tickets, code review, calendar), push each item to DoomScroll.build as a short review card, then read the user's comments back and do exactly what they wrote, with your own tools. Use when the user asks to "sync my inbox to DoomScroll.build", to put their notifications, mentions or to-dos in DoomScroll.build, to act on their DoomScroll.build comments, or on a /loop schedule that does this.
-allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/../doomscroll-video/scripts/doomscroll.mjs *)
----
-
 # DoomScroll.build inbox
 
 The user reviews on DoomScroll.build; you do the legwork. DoomScroll.build never connects to their accounts here: you read them
 with the tools this session already has (MCP servers, CLIs), and you act on them the same way.
 
-`ds` below means `node ${CLAUDE_SKILL_DIR}/../doomscroll-video/scripts/doomscroll.mjs` (the `doomscroll-video` skill
-from the same plugin). Sign-in is the same: `DOOMSCROLL_API_KEY`, or `ds login` once (show the user the link and code).
+`ds` below means `node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs` (this skill's script; `${CLAUDE_SKILL_DIR}` is the folder this file
+is in). Sign-in is the same as for videos: `DOOMSCROLL_API_KEY`, or `ds login` once (show the user the link and code).
 
 `ds ask on` sends Claude's multiple-choice questions to your phone (the plugin's opt-in AskUserQuestion hook; `ds ask off` stops it).
 
