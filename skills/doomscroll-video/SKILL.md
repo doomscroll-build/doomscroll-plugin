@@ -251,6 +251,10 @@ node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs local --title "Cache search resu
   Stealth is off; otherwise the video is made shareable and the comment links its MP4, so reviewers can always play it.
 - `local` options: `--title` (one line), `--description` (what and why), `--include <path>` (up to 40 key files, sent
   whole), `--base <ref>` when the base is not the default branch, `--diff-file <path|->` for a prepared diff.
+- Anything else can be a video too: a topic, an explanation you just gave, notes or a document. Send what it is about and
+  the material; DoomScroll.build picks the form (diagram, chart, kinetic text, 3D, screenshots), so never ask the user for a
+  format: `doomscroll.mjs video "How OAuth works, for a non-developer" --title "OAuth in 60 seconds" --file notes.md
+  --language en` (`--file` up to 4 attachments of 1 MB; `-` reads the text from stdin; public-by-link like `local`).
 - Other commands: `status <id>`, `download <id> --out file.mp4`, `share <id>`, `unshare <id>`, `me`. `--no-wait` submits and prints the id plus the links the video will have (`watchUrl`, `previewUrl`, `shareUrl`, live once it is done):
   use it whenever the work should not wait for the render.
 - Publication: when the user wants the video in the PR, use `--publish` or MCP `publish: true`. This works with their GitHub account without installing the GitHub App on the organization. Stealth mode must be off. Omit the flag or use `--no-publish` for a private request.

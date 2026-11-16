@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// DoomScroll agent client: submit a pull request or a local diff, poll until the video is ready, download the MP4; and use
+// DoomScroll agent client: submit a pull request, a local diff or any topic, poll until the video is ready, download the MP4; and use
 // DoomScroll's metered voice APIs (speech, word-timed transcription) without an OpenAI key of your own.
 // Dependency-free (Node 18+). Reads the key from DOOMSCROLL_API_KEY or the browser sign-in saved by `login`, and never prints it.
 // MIT License. See ../../../LICENSE.
@@ -19,6 +19,9 @@ const HELP = `Usage:
   doomscroll.mjs transcribe <audio file> [--out <file.json>] [--model whisper-1] [--words]
   doomscroll.mjs pr <owner/repo#number | github PR URL> [options]
   doomscroll.mjs local [--base <ref>] [--diff-file <path|->] [--title <text>] [--description <text>] [--repo <name>] [--include <path>]... [options]
+  doomscroll.mjs video <text|-> [--title <text>] [--file <path>]... [options]
+                                               A video of anything: a topic, an explanation, notes or a document. DoomScroll.build
+                                               picks the form. --file attaches material (up to 4, 1 MB each)
   doomscroll.mjs item follow <id>             Bind this session to future feedback on current bytes
   doomscroll.mjs item post <manifest.json>    Upload files and submit a stored review item
   doomscroll.mjs item feedback [--project <slug>] [--since <id>] [--latest 1] [--json]   Responses after a numeric cursor; --latest 1 keeps only each reviewer's newest per item revision
@@ -98,12 +101,12 @@ later, nothing is assumed done). A write (reply, tags, item, voice) is sent once
 
 Progress goes to stderr; the final result is one JSON object on stdout.`
 
-const LIMITS = { diff: 600_000, includes: 40, includeBytes: 100_000, includeTotal: 400_000 }
+const LIMITS = { diff: 600_000, includes: 40, includeBytes: 100_000, includeTotal: 400_000, text: 8_000, files: 4, fileBytes: 1_000_000, fileTotal: 2_000_000 }
 const fail = (message, code = 1) => { process.stderr.write(`doomscroll: ${message}\n`); process.exit(code) }
 const log = message => process.stderr.write(`${message}\n`)
 
 function parseArgs(argv) {
-  const args = { _: [], include: [], screen: [] }
+  const args = { _: [], include: [], screen: [], file: [] }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '-h' || arg === '--help') args.help = true
@@ -126,7 +129,7 @@ function parseArgs(argv) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
       const value = argv[++i]
       if (value === undefined) fail(`${arg} needs a value`)
-      if (key === 'include' || key === 'screen') args[key].push(value); else args[key] = value
+      if (key === 'include' || key === 'screen' || key === 'file') args[key].push(value); else args[key] = value
     } else args._.push(arg)
   }
   return args
@@ -315,6 +318,32 @@ function localChange(args) {
   return { title: title.slice(0, 300), description: (args.description || '').slice(0, 20_000), diff, ...(repo ? { repo } : {}), files }
 }
 
+/** `video <text>`: what the video is about, plus --file attachments (text when UTF-8, else base64). */
+function promptRequest(text, args) {
+  if (text === '-') text = readFileSync(0, 'utf8')
+  text = (text || '').trim()
+  if (!text) fail('video needs what the video should be about: doomscroll.mjs video "How OAuth works, for a non-developer"')
+  if (text.length > LIMITS.text) fail(`the text is ${text.length} characters; the limit is ${LIMITS.text}. Put long material in --file.`)
+  if (args.file.length > LIMITS.files) fail(`at most ${LIMITS.files} --file attachments`)
+  const names = new Set()
+  let total = 0
+  const files = args.file.map(path => {
+    if (!existsSync(path) || !statSync(path).isFile()) fail(`--file ${path} not found`)
+    const bytes = readFileSync(path)
+    if (bytes.length > LIMITS.fileBytes) fail(`--file ${path} is over ${LIMITS.fileBytes / 1_000_000} MB`)
+    total += bytes.length
+    const name = basename(path).replace(/[^\w.-]/g, '-').replace(/^\.+/, '').slice(0, 100) || 'file'
+    if (names.has(name.toLowerCase())) fail(`two --file attachments are both named ${name}`)
+    names.add(name.toLowerCase())
+    let decoded
+    try { decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes) } catch { decoded = undefined }
+    if (decoded !== undefined && decoded.includes('\0')) decoded = undefined
+    return decoded === undefined ? { name, data: bytes.toString('base64') } : { name, text: decoded }
+  })
+  if (total > LIMITS.fileTotal) fail(`the --file attachments add up to more than ${LIMITS.fileTotal / 1_000_000} MB`)
+  return { text, ...(args.title ? { title: args.title.trim().slice(0, 120) } : {}), ...(files.length ? { files } : {}) }
+}
+
 async function wait(id, args) {
   const deadline = Date.now() + Number(args.timeout || 60) * 60_000
   let last = ''
@@ -342,7 +371,7 @@ async function finish(video, args, extra = {}) {
   if (video.status === 'failed') { process.stdout.write(`${JSON.stringify({ id: video.id, status: 'failed', error: video.error })}\n`); process.exit(2) }
   const watchUrl = video.links?.watchUrl || video.video?.watchUrl
   if (watchUrl) log(`watch it on ${host}: ${watchUrl}${unlisted(watchUrl) ? ' (anyone with the link)' : ''}`)
-  const shouldOpen = !args.noOpen && !args.auto && (args.open || command === 'pr' || command === 'local')
+  const shouldOpen = !args.noOpen && !args.auto && (args.open || command === 'pr' || command === 'local' || command === 'video')
   const opened = shouldOpen && watchUrl ? openInBrowser(watchUrl) : undefined
   const mp4 = await download(video.video.mp4Url, args.out || `doomscroll-${video.id}.mp4`)
   const gif = args.gif ? await download(video.video.gifUrl, args.gif) : undefined
@@ -357,7 +386,7 @@ if (theme !== 'classic') fail('--theme must be classic')
 const LANGUAGES = ['en', 'ar', 'es', 'fr', 'de', 'pt', 'tr', 'hi', 'id', 'ja', 'ko', 'zh']
 if (args.language && !LANGUAGES.includes(args.language)) fail(`--language must be one of ${LANGUAGES.join(' ')}`)
 if (args.publish && args.noPublish) fail('choose --publish or --no-publish, not both')
-if (args.publish && command === 'local') fail('--publish is only available for pull requests')
+if (args.publish && (command === 'local' || command === 'video')) fail('--publish is only available for pull requests')
 if (args.auto && command !== 'pr') fail('--auto is only available for pull requests')
 if (args.comment && command !== 'pr') fail('--comment is only available for pull requests')
 if (args.shareable && args.private) fail('choose --shareable or --private, not both')
@@ -875,11 +904,13 @@ else if (command === 'download') {
   const { video } = await call(`/api/agent/videos/${encodeURIComponent(target)}`)
   if (video.status !== 'succeeded') fail(`video is ${video.status}: ${video.error || video.stage}`)
   await finish(video, args)
-} else if (command === 'pr' || command === 'local') {
+} else if (command === 'pr' || command === 'local' || command === 'video') {
   const notes = readNotes(args.notes), screens = readScreens(args.screen)
   const sharing = args.shareable ? { shareable: true } : args.private ? { shareable: false } : {}
   const extras = { theme, ...(args.language ? { language: args.language } : {}), ...(notes ? { notes } : {}), ...(screens.length ? { screens } : {}), ...sharing }
-  const body = command === 'pr' ? { pr: parsePr(target), ...extras, ...sessionSource(), ...(args.publish ? { publish: true } : args.noPublish ? { publish: false } : {}), ...(args.auto ? { auto: true } : {}) } : { change: localChange(args), ...extras, ...sessionSource() }
+  const body = command === 'pr' ? { pr: parsePr(target), ...extras, ...sessionSource(), ...(args.publish ? { publish: true } : args.noPublish ? { publish: false } : {}), ...(args.auto ? { auto: true } : {}) }
+    : command === 'video' ? { prompt: promptRequest(args._.slice(1).join(' '), args), ...extras, ...sessionSource() }
+      : { change: localChange(args), ...extras, ...sessionSource() }
   let answer = args.orShareable && body.publish ? await request('/api/agent/videos', body) : undefined
   // --publish --or-shareable: publishing needs write access and Stealth off; when DoomScroll refuses, the video is made
   // shareable instead, so reviewers can still play it from the PR comment.

@@ -22,6 +22,7 @@ The short version:
 4. Run `node <path>/skills/doomscroll-video/scripts/doomscroll.mjs pr owner/repo#123 --notes doomscroll-notes.json --out doomscroll.mp4 --gif doomscroll.gif`
    for a PR (or `scripts/pr-video.sh` for the current branch's PR, which also posts the PR comment), or `... local --title "<one line>" --description "<what and why>" --out doomscroll.mp4 --gif doomscroll.gif`
    for local changes. It submits, polls and downloads; it can take several minutes. `share <id>` / `unshare <id>` changes the stable public MP4 link without rerendering.
+   Anything else (a topic, an explanation, notes, a document) is `... video "<what it is about>" [--file <path>]...`; DoomScroll.build picks the form, so never ask for a format.
 5. When the user wants the video in a PR or asks for a video test report there, add `--publish` or send MCP `publish: true`.
    DoomScroll.build posts status, its hosted preview/link, and failure guidance through the user's GitHub account. No organization
    App installation is needed. Repository write access and Stealth mode off are required. Without this opt-in, requests stay private.
