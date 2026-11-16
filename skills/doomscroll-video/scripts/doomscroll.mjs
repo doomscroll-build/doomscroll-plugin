@@ -22,6 +22,9 @@ const HELP = `Usage:
   doomscroll.mjs video <text|-> [--title <text>] [--file <path>]... [options]
                                                A video of anything: a topic, an explanation, notes or a document. DoomScroll.build
                                                picks the form. --file attaches material (up to 4, 1 MB each)
+  doomscroll.mjs study <topic|-> [--title <text>] [--file <path>]... [--language <id>] [--no-wait]
+                                               A study pack: a short video per subtopic (basics first) and flashcards, all
+                                               tagged #study-… in your feed. About 5 credits: 1 for the plan, 1 per video
   doomscroll.mjs item follow <id>             Bind this session to future feedback on current bytes
   doomscroll.mjs item post <manifest.json>    Upload files and submit a stored review item
   doomscroll.mjs item feedback [--project <slug>] [--since <id>] [--latest 1] [--json]   Responses after a numeric cursor; --latest 1 keeps only each reviewer's newest per item revision
@@ -322,7 +325,7 @@ function localChange(args) {
 function promptRequest(text, args) {
   if (text === '-') text = readFileSync(0, 'utf8')
   text = (text || '').trim()
-  if (!text) fail('video needs what the video should be about: doomscroll.mjs video "How OAuth works, for a non-developer"')
+  if (!text) fail(command === 'study' ? 'study needs a topic: doomscroll.mjs study "How a CDN origin shield works"' : 'video needs what the video should be about: doomscroll.mjs video "How OAuth works, for a non-developer"')
   if (text.length > LIMITS.text) fail(`the text is ${text.length} characters; the limit is ${LIMITS.text}. Put long material in --file.`)
   if (args.file.length > LIMITS.files) fail(`at most ${LIMITS.files} --file attachments`)
   const names = new Set()
@@ -367,6 +370,25 @@ async function wait(id, args) {
   }
 }
 
+/** Polls a study pack until it is planned into cards (or failed), riding out outages like `wait`. */
+async function waitStudy(id, args) {
+  const deadline = Date.now() + Number(args.timeout || 60) * 60_000
+  let last = ''
+  for (;;) {
+    const { response, data, transient } = await http(`/api/agent/study/${id}`, { purpose: 'poll', retry: false })
+    if (transient || response.status === 429 || response.status >= 500) {
+      if (Date.now() > deadline) fail(transient || `could not reach ${origin}: ${response.status}`, 7)
+      await sleep(Math.min(POLL_MS, deadline - Date.now()))
+      continue
+    }
+    if (!response.ok) fail(`${response.status} ${data.error || response.statusText}`, exitFor(response.status))
+    if (data.pack.status !== last) { log(data.pack.status); last = data.pack.status }
+    if (data.pack.status !== 'planning') return data.pack
+    if (Date.now() > deadline) fail(`still planning after ${args.timeout || 60} minutes; the cards will still appear at ${data.pack.links.feedUrl}`, 5)
+    await sleep(POLL_MS)
+  }
+}
+
 async function finish(video, args, extra = {}) {
   if (video.status === 'failed') { process.stdout.write(`${JSON.stringify({ id: video.id, status: 'failed', error: video.error })}\n`); process.exit(2) }
   const watchUrl = video.links?.watchUrl || video.video?.watchUrl
@@ -386,7 +408,7 @@ if (theme !== 'classic') fail('--theme must be classic')
 const LANGUAGES = ['en', 'ar', 'es', 'fr', 'de', 'pt', 'tr', 'hi', 'id', 'ja', 'ko', 'zh']
 if (args.language && !LANGUAGES.includes(args.language)) fail(`--language must be one of ${LANGUAGES.join(' ')}`)
 if (args.publish && args.noPublish) fail('choose --publish or --no-publish, not both')
-if (args.publish && (command === 'local' || command === 'video')) fail('--publish is only available for pull requests')
+if (args.publish && (command === 'local' || command === 'video' || command === 'study')) fail('--publish is only available for pull requests')
 if (args.auto && command !== 'pr') fail('--auto is only available for pull requests')
 if (args.comment && command !== 'pr') fail('--comment is only available for pull requests')
 if (args.shareable && args.private) fail('choose --shareable or --private, not both')
@@ -935,4 +957,13 @@ else if (command === 'download') {
   const tip = { ...(automatic === false ? { tip: `Connect GitHub at ${connectUrl} and every new PR gets its video automatically.` } : {}), ...(args.comment ? commentOnPr(body.pr, video) : {}) }
   if (args.noWait) process.stdout.write(`${JSON.stringify({ id: video.id, status: video.status, ...(video.links ?? {}), ...tip })}\n`)
   else await finish(await wait(video.id, args), args, tip)
+} else if (command === 'study') {
+  const study = promptRequest(args._.slice(1).join(' '), args)
+  const { pack, credits } = await call('/api/agent/study', { study, ...(args.language ? { language: args.language } : {}) })
+  log(`study pack ${pack.id} #${pack.tag}: about ${pack.estimatedCredits} credits (${credits.unlimited ? 'unlimited' : `${credits.remaining} left`})`)
+  log(`its videos and flashcards will be on ${host}: ${pack.links.feedUrl}`)
+  const done = args.noWait ? pack : await waitStudy(pack.id, args)
+  if (args.open && !args.noOpen && done.status !== 'failed') openInBrowser(done.links.feedUrl)
+  process.stdout.write(`${JSON.stringify({ id: done.id, status: done.status, title: done.title, tag: done.tag, videos: done.videos, flashcards: done.flashcards, feedUrl: done.links.feedUrl, ...(done.error ? { error: done.error } : {}) })}\n`)
+  if (done.status === 'failed') process.exit(2)
 } else fail(`unknown command "${command}"\n\n${HELP}`)

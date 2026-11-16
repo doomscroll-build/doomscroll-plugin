@@ -255,6 +255,10 @@ node ${CLAUDE_SKILL_DIR}/scripts/doomscroll.mjs local --title "Cache search resu
   the material; DoomScroll.build picks the form (diagram, chart, kinetic text, 3D, screenshots), so never ask the user for a
   format: `doomscroll.mjs video "How OAuth works, for a non-developer" --title "OAuth in 60 seconds" --file notes.md
   --language en` (`--file` up to 4 attachments of 1 MB; `-` reads the text from stdin; public-by-link like `local`).
+- When the user wants to learn a topic (not one video), make a study pack: `doomscroll.mjs study "<topic, and what they
+  already know>" [--file notes.md]... [--language en]`. It plans 3–5 subtopics from the basics up, makes a short video and
+  flashcards (question on the front, answer on the back) for each, all under one `#study-…` hashtag in their feed, and prints
+  the feed link (`feedUrl`); give the user that link. About 5 credits (1 for the plan, 1 per video); `--no-wait` returns at once.
 - Other commands: `status <id>`, `download <id> --out file.mp4`, `share <id>`, `unshare <id>`, `me`. `--no-wait` submits and prints the id plus the links the video will have (`watchUrl`, `previewUrl`, `shareUrl`, live once it is done):
   use it whenever the work should not wait for the render.
 - Publication: when the user wants the video in the PR, use `--publish` or MCP `publish: true`. This works with their GitHub account without installing the GitHub App on the organization. Stealth mode must be off. Omit the flag or use `--no-publish` for a private request.
